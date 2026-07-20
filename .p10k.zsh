@@ -34,6 +34,7 @@
     os_icon                 # os identifier
     dir                     # current directory
     vcs                     # git status
+    # dotfiles                # dotfiles bare repo (git-dir=$HOME/.dotfiles) — disabled: show git info only in real repos
     # prompt_char           # prompt symbol
   )
 
@@ -353,7 +354,7 @@
 
   #####################################[ vcs: git status ]######################################
   # Version control background colors.
-  typeset -g POWERLEVEL9K_VCS_CLEAN_BACKGROUND='#d79921'
+  typeset -g POWERLEVEL9K_VCS_CLEAN_BACKGROUND='#a0a000'
   typeset -g POWERLEVEL9K_VCS_MODIFIED_BACKGROUND='#d79921'
   typeset -g POWERLEVEL9K_VCS_UNTRACKED_BACKGROUND='#d79921'
   typeset -g POWERLEVEL9K_VCS_CONFLICTED_BACKGROUND='#d79921'
@@ -1780,6 +1781,28 @@
     # instant_prompt_example. This will give us the same `example` prompt segment in the instant
     # and regular prompts.
     prompt_example
+  }
+
+  # Dotfiles bare-repo segment. The dotfiles repo lives at $HOME/.dotfiles with work-tree $HOME,
+  # so there is no `.git` in any ancestor of ~/.config/nvim for p10k's `vcs` segment to discover.
+  # This segment surfaces that repo's branch + dirty state, scoped to the current directory.
+  # It only renders when the `vcs` segment found nothing (no real repo here) and the cwd actually
+  # contains files tracked by the dotfiles repo, so it never duplicates `vcs` or shows up in
+  # untracked dirs like ~/Downloads.
+  function prompt_dotfiles() {
+    emulate -L zsh
+    [[ -d $HOME/.dotfiles ]] || return
+    [[ $PWD == $HOME || $PWD == $HOME/* ]] || return
+    [[ -z $VCS_STATUS_LOCAL_BRANCH ]] || return
+    local tracked
+    tracked=$(git --git-dir=$HOME/.dotfiles --work-tree=$HOME ls-files -- . 2>/dev/null) || return
+    [[ -n $tracked ]] || return
+    local branch
+    branch=$(git --git-dir=$HOME/.dotfiles --work-tree=$HOME rev-parse --abbrev-ref HEAD 2>/dev/null) || return
+    [[ -n $branch ]] || return
+    local dirty=''
+    [[ -n $(git --git-dir=$HOME/.dotfiles --work-tree=$HOME status --porcelain -- . 2>/dev/null) ]] && dirty='*'
+    p10k segment -b '#d79921' -f 0 -i "${(g::)POWERLEVEL9K_VCS_BRANCH_ICON}" -t "${branch//\%/%%}${dirty}"
   }
 
   # User-defined prompt segments can be customized the same way as built-in segments.

@@ -166,11 +166,11 @@ return {
 					filter = { cwd = true },
 					sort = sort_by_ext_then_tests,
 				},
-			explorer = {
-				git_status = true,
-				git_untracked = true,
-				ignored = true,
-				win = {
+				explorer = {
+					git_status = true,
+					git_untracked = true,
+					ignored = true,
+					win = {
 						input = {
 							keys = {
 								["<C-b>"] = { "close", mode = { "n", "i" } },
@@ -606,18 +606,11 @@ return {
 			desc = "Dismiss All Notifications",
 		},
 		{
-			"<C-/>",
+			"<leader>ft",
 			function()
 				Snacks.terminal()
 			end,
 			desc = "Toggle Terminal",
-		},
-		{
-			"<C-_>",
-			function()
-				Snacks.terminal()
-			end,
-			desc = "which_key_ignore",
 		},
 		{
 			"]]",
