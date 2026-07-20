@@ -1,0 +1,131 @@
+{
+	"throw new Error": {
+		"prefix": "tne",
+		"body": "throw new Error($1)",
+		"description": "Throw a new error"
+	},
+	"JSON.stringify": {
+		"prefix": "jsf",
+		"body": "JSON.stringify($1)",
+		"description": "JSON.stringify"
+	},
+	"Console.log": {
+		"prefix": "clg",
+		"body": "console.log($1)",
+		"description": "Console Log"
+	},
+	"sn_afterEach": {
+		"prefix": "sn_afterEach",
+		"body": [
+			"afterEach(() => {",
+			"\t$0",
+			"});"
+		]
+	},
+	"sn_ajaxStub": {
+		"prefix": "sn_ajaxStub",
+		"body": [
+			"jasmine.Ajax.stubRequest(this.viewModel.RESTletURL, /loadWorkOrders/).andReturn(",
+			"\tViewTestSetup.createAjaxReturnObject({",
+			"\t\tresponseData: { success: true, data: [] },",
+			"\t})",
+			");"
+		]
+	},
+	"sn_beforeEach": {
+		"prefix": "sn_beforeEach",
+		"body": [
+			"beforeEach(() => {",
+			"\t$0",
+			"});"
+		]
+	},
+	"sn_define": {
+		"prefix": "sn_define",
+		"body": [
+			"/**",
+			" * @NApiVersion 2.1",
+			" * @NModuleScope SameAccount",
+			" */",
+			"define([$0], () => {",
+			"\t",
+			"});"
+		]
+	},
+	"sn_describe": {
+		"prefix": "sn_describe",
+		"body": [
+			"describe(`$0TODO`, () => {",
+			"\t",
+			"});"
+		],
+		"description": "jasmine \"describe\" template"
+	},
+	"sn_it": {
+		"prefix": "sn_it",
+		"body": [
+			"it(`$1spec_description`, () => {",
+			"\t$0",
+			"});"
+		],
+		"description": "jasmine \"it\" template"
+	},
+	"sn_2.0testSuite": {
+		"prefix": "sn_2.0TestSuite",
+		"body": [
+			"define([",
+			"\t'$1',",
+			"], ($2) => {",
+			"\tdescribe('$3', () => {",
+			"\t\tit('${4:should test behavior}', () => {\n",
+			"\t\t});",
+			"\t});",
+			"});"
+		],
+		"description": "test file template"
+	},
+	"sn_viewModelTestSuite": {
+		"prefix": "sn_viewModelTestSuite",
+		"body": [
+			"describe('${1:viewModel.Method}', () => {",
+			"\tlet viewModel;",
+			"\tbeforeEach(() => {",
+			"\t\tconst functionIdentifier = '${2:filename}';",
+			"\t\twindow[`${${functionIdentifier}}windowLoadEvent`]();",
+			"\t\tviewModel = window[`${${functionIdentifier}}_viewModel`];",
+			"\t});",
+			"\tit('${3:tests behavior}', () => {",
+			"\t\t$4",
+			"\t});",
+			"});"
+		],
+		"description": "viewmodel test suite template"
+	},
+	"sn_repoclass": {
+		"prefix": "sn_repo",
+		"body": [
+			"class $1 {",
+			"\tconstructor (ctorParams = {}) {",
+			"\t\trfsSchema.create({",
+			"\t\t\t",
+			"\t\t}).strict().check(ctorParams);\n",
+			"\t\tconst {\n",
+			"\t\t} = ctorParams",
+			"\t}",
+			"}"
+		]
+	},
+	"sn_entityclass": {
+		"prefix": "sn_entity",
+		"body": [
+			"class $1 {",
+			"\tconstructor (ctorParams = {}) {",
+			"\t\trfsSchema.create({",
+			"\t\t\t",
+			"\t\t}).strict().check(ctorParams);\n",
+			"\t\t_.assign(this, ctorParams)",
+			"\t}",
+			"}"
+		]
+	}
+}
