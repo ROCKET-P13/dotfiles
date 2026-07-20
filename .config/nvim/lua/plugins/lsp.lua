@@ -6,6 +6,15 @@ local M = {
 	event = { "BufReadPre", "BufNewFile" },
 	config = function()
 		vim.lsp.config("lua_ls", {
+			root_markers = { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" },
+			root_dir = function(bufnr, on_dir)
+				local path = vim.api.nvim_buf_get_name(bufnr)
+				if path == "" then
+					path = vim.fn.getcwd()
+				end
+				local root = vim.fs.root(path, { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" })
+				on_dir(root or vim.fn.stdpath("config"))
+			end,
 			settings = {
 				Lua = {
 					workspace = { checkThirdParty = false },

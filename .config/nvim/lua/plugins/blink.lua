@@ -42,9 +42,12 @@ local M = {
 				default = { "lsp", "snippets", "buffer" },
 			},
 			completion = {
+				keyword = {
+					range = "full",
+				},
 				accept = {
 					auto_brackets = {
-						enabled = false,
+						enabled = true,
 					},
 				},
 				trigger = {

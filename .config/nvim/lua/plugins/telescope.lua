@@ -35,7 +35,7 @@ local M = {
 				initial_mode = "insert",
 				selection_strategy = "reset",
 				color_devicons = true,
-				preview = false,
+				previewer = false,
 			},
 			mappings = {
 				n = {
@@ -56,7 +56,7 @@ local M = {
 			pickers = {
 				find_files = {},
 				git_status = {
-					preview = true,
+					previewer = true,
 				},
 			},
 			extensions = {
