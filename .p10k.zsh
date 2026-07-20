@@ -353,11 +353,11 @@
 
   #####################################[ vcs: git status ]######################################
   # Version control background colors.
-  typeset -g POWERLEVEL9K_VCS_CLEAN_BACKGROUND='#fe8019'
-  typeset -g POWERLEVEL9K_VCS_MODIFIED_BACKGROUND='#fe8019'
-  typeset -g POWERLEVEL9K_VCS_UNTRACKED_BACKGROUND='#fe8019'
-  typeset -g POWERLEVEL9K_VCS_CONFLICTED_BACKGROUND='#fe8019'
-  typeset -g POWERLEVEL9K_VCS_LOADING_BACKGROUND='#fe8019'
+  typeset -g POWERLEVEL9K_VCS_CLEAN_BACKGROUND='#d79921'
+  typeset -g POWERLEVEL9K_VCS_MODIFIED_BACKGROUND='#d79921'
+  typeset -g POWERLEVEL9K_VCS_UNTRACKED_BACKGROUND='#d79921'
+  typeset -g POWERLEVEL9K_VCS_CONFLICTED_BACKGROUND='#d79921'
+  typeset -g POWERLEVEL9K_VCS_LOADING_BACKGROUND='#d79921'
 
   # Branch icon. Set this parameter to '\UE0A0 ' for the popular Powerline branch icon.
   typeset -g POWERLEVEL9K_VCS_BRANCH_ICON='\uF126 '
