@@ -189,11 +189,26 @@ function M.goodness(prompt, line, entry, opts)
 		return nil
 	end
 	local raw_label = M.score(prompt, label) or 0
-	-- label matches count double so a filename hit outweighs a path hit;
-	-- a mild path-length penalty nudges shorter paths up on ties, the way
-	-- VSCode prefers files closer to the workspace root.
-	local raw = raw_label * 2 + raw_path - (#line * 0.05)
-	return raw + boost - penalty
+
+	-- Strict tiers, each dominating any within-tier score:
+	--   3 = recently opened (MRU), any match location
+	--   2 = filename match (non-MRU)
+	--   1 = directory-only match (non-MRU)
+	local TIER = 1e6
+	local tier, within
+	if entry.is_mru and raw_label > 0 then
+		tier = 3 * TIER
+		-- recency dominates within MRU; fuzzy goodness breaks ties
+		local recency = (recency_weight / (entry.recency_rank + 1)) * 1000
+		within = recency + raw_label * 2 + raw_path - (#line * 0.05)
+	elseif raw_label > 0 then
+		tier = 2 * TIER
+		within = raw_label * 2 + raw_path - (#line * 0.05)
+	else
+		tier = 1 * TIER
+		within = raw_path - (#line * 0.05)
+	end
+	return tier + within - penalty
 end
 
 -- Build a Telescope sorter. `recency_weight` controls how strongly MRU rank
