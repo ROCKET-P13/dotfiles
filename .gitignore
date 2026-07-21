@@ -1,6 +1,0 @@
-*
-!.config/
-!.config/**
-!README.md
-!.zshrc
-!.tmux.conf
