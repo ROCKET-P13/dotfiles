@@ -82,8 +82,9 @@ local M = {
 		local builtin = require("telescope.builtin")
 		vim.keymap.set("n", "<C-g>", builtin.git_status, {})
 		vim.keymap.set("n", "<leader><leader>", builtin.buffers, {})
-		vim.keymap.set("n", "<leader>mg", require("config.telescope.multigrep").setup)
-	end,
+	vim.keymap.set("n", "<leader>mg", require("config.telescope.multigrep").setup)
+	vim.keymap.set("n", "<leader>md", require("config.telescope.gitdiff").setup)
+end,
 }
 
 return M

@@ -16,7 +16,7 @@ local M = {
 				-- cs = { "omnisharp" },
 			},
 			format_on_save = function(bufnr)
-				local disabled = { html = true, xml = true, cs = true }
+				local disabled = { html = true, xml = true, cs = true, json = true, jsonc = true }
 				if disabled[vim.bo[bufnr].filetype] then
 					return nil
 				end

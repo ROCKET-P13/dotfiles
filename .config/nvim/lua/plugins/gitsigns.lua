@@ -3,6 +3,7 @@ local M = {
 	config = function()
 		require("gitsigns").setup({
 			current_line_blame = true,
+			gh = true,
 			on_attach = function(bufnr)
 				local gs = package.loaded.gitsigns
 				vim.keymap.set("n", "]c", function()
@@ -25,9 +26,13 @@ local M = {
 					return "<Ignore>"
 				end, { expr = true, buffer = bufnr })
 
-				vim.keymap.set("n", "<leader>bl", function()
-					gs.blame_line({})
-				end)
+			vim.keymap.set("n", "<leader>bl", function()
+				gs.blame_line({})
+			end)
+
+			vim.keymap.set("n", "<leader>bo", function()
+				require("config.autocmds").open_blame_link()
+			end, { buffer = bufnr, desc = "Open link in blame popup" })
 
 				vim.keymap.set("n", "<leader>hs", gs.stage_hunk)
 				vim.keymap.set("n", "<leader>hr", gs.reset_hunk, {

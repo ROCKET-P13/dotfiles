@@ -1,0 +1,9 @@
+*
+!.config/
+!.config/**
+.config/cursor/**
+.config/gh/**
+!README.md
+!.zshrc
+!.tmux.conf
+!.gitignore

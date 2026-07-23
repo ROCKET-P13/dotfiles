@@ -7,14 +7,19 @@ local M = {
 	config = function()
 		vim.lsp.config("lua_ls", {
 			root_markers = { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" },
-			root_dir = function(bufnr, on_dir)
-				local path = vim.api.nvim_buf_get_name(bufnr)
-				if path == "" then
-					path = vim.fn.getcwd()
-				end
-				local root = vim.fs.root(path, { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" })
-				on_dir(root or vim.fn.stdpath("config"))
-			end,
+		root_dir = function(bufnr, on_dir)
+			local path = vim.api.nvim_buf_get_name(bufnr)
+			if path == "" then
+				path = vim.fn.getcwd()
+			end
+			local config = vim.fn.stdpath("config")
+			if vim.startswith(path, config .. "/") then
+				on_dir(config)
+				return
+			end
+			local root = vim.fs.root(path, { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" })
+			on_dir(root or vim.fn.stdpath("config"))
+		end,
 			settings = {
 				Lua = {
 					workspace = { checkThirdParty = false },
@@ -142,6 +147,16 @@ local M = {
 				focusable = false,
 			})
 		end, { desc = "Show line diagnostics" })
+
+		vim.keymap.set("n", "]d", function()
+			vim.diagnostic.jump({ count = 1, float = true })
+		end, { desc = "Next diagnostic" })
+
+		vim.keymap.set("n", "[d", function()
+			vim.diagnostic.jump({ count = -1, float = true })
+		end, { desc = "Previous diagnostic" })
+
+		vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, { desc = "Code action (apply fix)" })
 	end,
 }
 

@@ -91,10 +91,10 @@ local function input_line(buf)
 end
 
 local function flags_label(opts)
-	local function tok(on, label)
-		return on and ("[" .. label .. "]") or (" " .. label .. " ")
+	local function tok(key, on, label)
+		return on and (key .. ":[" .. label .. "]") or (key .. ":" .. label)
 	end
-	return tok(opts.case, "Aa") .. tok(opts.word, "\\b") .. tok(opts.regex, ".*")
+	return tok("M-c", opts.case, "Aa") .. " " .. tok("M-w", opts.word, "\\b") .. " " .. tok("M-r", opts.regex, ".*")
 end
 
 local function find_title(s)

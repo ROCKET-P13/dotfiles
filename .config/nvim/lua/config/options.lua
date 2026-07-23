@@ -22,7 +22,7 @@ vim.opt.smartcase = true
 
 vim.opt.termguicolors = true
 vim.opt.background = "dark"
-vim.opt.signcolumn = "yes"
+vim.opt.signcolumn = "yes:1"
 
 vim.opt.backspace = "indent,eol,start"
 
@@ -32,6 +32,17 @@ vim.opt.splitright = true
 vim.opt.splitbelow = true
 
 vim.opt.fixendofline = false
+
+-- Disable auto-insertion of comment leaders when pressing Enter (insert) or
+-- o/O (normal). Built-in ftplugins set the `r`/`o` formatoptions flags per
+-- filetype, so they must be stripped on FileType after the ftplugin runs.
+vim.api.nvim_create_autocmd({ "FileType", "BufEnter" }, {
+	group = vim.api.nvim_create_augroup("disable-comment-continuation", { clear = true }),
+	callback = function()
+		vim.opt_local.formatoptions:remove("r")
+		vim.opt_local.formatoptions:remove("o")
+	end,
+})
 
 vim.g.mapleader = " "
 -- force CRLF line endings for all new files
