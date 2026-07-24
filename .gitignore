@@ -6,4 +6,6 @@
 !README.md
 !.zshrc
 !.tmux.conf
+!.tmux-new-session-prefix.sh
+!.tmux-rename-session.sh
 !.gitignore
