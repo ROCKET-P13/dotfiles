@@ -8,6 +8,8 @@ local entry_display = require("telescope.pickers.entry_display")
 
 local M = {}
 
+local ns = vim.api.nvim_create_namespace("telescope_gitdiff")
+
 -- Run a git command synchronously and return its stdout.
 local function run_git(args, cwd)
 	local obj = vim.system(args, { cwd = cwd, text = true }):wait()
@@ -47,7 +49,13 @@ local function parse_hunks(output, status)
 			finish()
 			file = nil
 		elseif line:sub(1, 3) == "+++" then
-			local p = line:sub(4):gsub("^%s+", "")
+			-- git appends a trailing tab to +++/--- paths that contain spaces,
+			-- and may C-quote paths with unsafe chars; strip both so the path
+			-- we open matches the real file.
+			local p = line:sub(4):gsub("^%s+", ""):gsub("%s+$", "")
+			if p:sub(1, 1) == '"' and p:sub(-1) == '"' then
+				p = p:sub(2, -2):gsub("\\\\", "\\"):gsub('\\"', '"'):gsub("\\t", "\t")
+			end
 			if p == "/dev/null" then
 				file = nil
 			else
@@ -142,6 +150,15 @@ end
 local function git_diff(opts)
 	opts = opts or {}
 	opts.cwd = opts.cwd or vim.uv.cwd()
+	opts.layout_strategy = opts.layout_strategy or "horizontal"
+	opts.layout_config = vim.tbl_deep_extend("force", {
+		horizontal = {
+			height = 0.6,
+			width = 0.7,
+			preview_cutoff = 0,
+			prompt_position = "top",
+		},
+	}, opts.layout_config or {})
 
 	local hunks = collect_hunks(opts.cwd)
 	pickers
@@ -154,10 +171,35 @@ local function git_diff(opts)
 			sorter = conf.generic_sorter(opts),
 			previewer = previewers.new_buffer_previewer({
 				title = "Hunk Preview",
+				dyn_title = function(_, entry)
+					return entry.filename
+				end,
 				define_preview = function(self, entry)
+					local bufnr = self.state.bufnr
 					local lines = vim.split(entry.hunk_text, "\n")
-					vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, lines)
-					vim.bo[self.state.bufnr].filetype = "diff"
+					vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+					vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+
+					local ft = vim.filetype.match({ filename = entry.filename }) or "diff"
+					vim.bo[bufnr].filetype = ft
+
+					for i, line in ipairs(lines) do
+						local hl
+						local first = line:sub(1, 1)
+						if first == "+" then
+							hl = "DiffAdd"
+						elseif first == "-" then
+							hl = "DiffDelete"
+						elseif line:sub(1, 2) == "@@" then
+							hl = "TelescopeResultsComment"
+						end
+						if hl then
+							vim.api.nvim_buf_set_extmark(bufnr, ns, i - 1, 0, {
+								line_hl_group = hl,
+								priority = 100,
+							})
+						end
+					end
 				end,
 			}),
 			attach_mappings = function()

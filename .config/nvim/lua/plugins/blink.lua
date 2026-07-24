@@ -27,6 +27,44 @@ local M = {
 			return ok and sig_trigger.context ~= nil
 		end
 
+		-- Decides whether a `{` at `end_col` (1-based, the index of the `{`
+		-- itself) opens an object literal or a code block. Object literals sit
+		-- in expression position: preceded by `=`, `(`, `,`, `[`, `:`, `?`, or
+		-- an expression-yielding keyword (`return`, `await`, `new`, ...).
+		-- Everything else (`)`, `else`, `try`, `do`, `=>`, statement starts) is
+		-- a block and stays enabled. Used to suppress completions only on
+		-- object-key typing, not inside function bodies.
+		local function is_object_brace(line, end_col)
+			local j = end_col
+			while j >= 1 and (line:sub(j, j) == " " or line:sub(j, j) == "\t") do
+				j = j - 1
+			end
+			local prev = line:sub(j, j)
+			if j == 0
+				or prev == "="
+				or prev == "("
+				or prev == ","
+				or prev == "["
+				or prev == ":"
+				or prev == "?"
+			then
+				return true
+			end
+			if prev:match("[%w_$]") then
+				local wj = j
+				while wj >= 1 and line:sub(wj, wj):match("[%w_$]") do
+					wj = wj - 1
+				end
+				local word = line:sub(wj + 1, j)
+				return vim.tbl_contains({
+					"return", "typeof", "void", "delete", "in", "of",
+					"await", "yield", "throw", "new", "and", "or", "not",
+					"is", "as",
+				}, word)
+			end
+			return false
+		end
+
 		require("blink.cmp").setup({
 		-- Enter accepts the selected suggestion (falls back to a newline
 		-- when no menu is visible). Esc dismisses the menu and leaves insert
@@ -122,27 +160,61 @@ local M = {
 						top.content = top.content .. ch
 						i = i + 1
 					end
-				elseif top and top.paren then
-					-- Argument-list context `(...)`. Only `call` parens (preceded
-					-- by an identifier / `)` / `]`, i.e. a real function call) are
-					-- candidates for the no-signature suppression below; grouping
-					-- and control-flow parens (`if (`, `(a + b)`) stay enabled.
-					if ch == ")" then
-						stack[#stack] = nil
-						i = i + 1
-					elseif ch == "'" or ch == '"' or ch == "`" then
-						stack[#stack + 1] = { delim = ch }
-						i = i + 1
-					else
-						i = i + 1
-					end
+			elseif top and top.paren then
+				-- Argument-list context `(...)`. Only `call` parens (preceded
+				-- by an identifier / `)` / `]`, i.e. a real function call) are
+				-- candidates for the no-signature suppression below; grouping
+				-- and control-flow parens (`if (`, `(a + b)`) stay enabled.
+				if ch == ")" then
+					stack[#stack] = nil
+					i = i + 1
 				elseif ch == "'" or ch == '"' or ch == "`" then
 					stack[#stack + 1] = { delim = ch }
 					i = i + 1
-				elseif ch == "[" then
-					stack[#stack + 1] = { bracket = true, content = "" }
+				else
 					i = i + 1
-				elseif ch == "(" then
+				end
+			elseif top and top.brace then
+				-- Brace context covers both object literals (`{ k: v }`) and
+				-- code blocks (`if () {`, `() => {`, `function foo() {`). Only
+				-- object-literal braces suppress: while the current element
+				-- (text since the last `,` or opening `{`) has no `:`, the
+				-- cursor is on a property key, so LSP suggestions are hidden.
+				-- Once `:` is seen we're in value position and stay enabled.
+				if ch == "}" then
+					stack[#stack] = nil
+					i = i + 1
+				elseif ch == "'" or ch == '"' or ch == "`" then
+					stack[#stack + 1] = { delim = ch }
+					i = i + 1
+				elseif ch == "{" then
+					stack[#stack + 1] = { brace = true, object = is_object_brace(before, i - 1), content = "", colon = false }
+					i = i + 1
+				elseif top.object then
+					if ch == "," then
+						top.content = ""
+						top.colon = false
+						i = i + 1
+					elseif ch == ":" then
+						top.colon = true
+						i = i + 1
+					else
+						top.content = top.content .. ch
+						i = i + 1
+					end
+				else
+					i = i + 1
+				end
+			elseif ch == "'" or ch == '"' or ch == "`" then
+					stack[#stack + 1] = { delim = ch }
+					i = i + 1
+			elseif ch == "[" then
+				stack[#stack + 1] = { bracket = true, content = "" }
+				i = i + 1
+			elseif ch == "{" then
+				stack[#stack + 1] = { brace = true, object = is_object_brace(before, i - 1), content = "", colon = false }
+				i = i + 1
+			elseif ch == "(" then
 					-- Decide call vs. grouping by the token immediately before
 					-- `(` (skipping whitespace). A preceding identifier that is
 					-- not a control-flow keyword, or a preceding `)` / `]`,
@@ -176,18 +248,27 @@ local M = {
 					i = i + 1
 				end
 			end
-			local top = stack[#stack]
-			disabled = top ~= nil
-				and (top.delim ~= nil
-					or (top.bracket ~= nil and top.content:match("^%s*%d*$") ~= nil)
-					or (top.paren ~= nil and top.call and not in_call_with_signature()))
-			end
+		local top = stack[#stack]
+		disabled = top ~= nil
+			and (top.delim ~= nil
+				or (top.bracket ~= nil and top.content:match("^%s*%d*$") ~= nil)
+				or (top.brace ~= nil and top.object and not top.colon))
+		end
 			return not disabled
 		end,
 			snippets = { preset = "luasnip" },
-			sources = {
-				default = { "lsp", "path", "snippets" },
-				providers = {
+		sources = {
+			default = { "lsp", "path", "snippets" },
+			-- Require 3+ characters before auto-suggesting, so typing short
+			-- fragments doesn't pop the menu. Trigger characters (e.g. `.`
+			-- member access) and manual shows (`<C-Space>`) bypass the limit.
+			min_keyword_length = function(ctx)
+				if ctx.trigger.kind == "trigger_character" or ctx.trigger.kind == "manual" then
+					return 0
+				end
+				return 3
+			end,
+			providers = {
 					buffer = {
 						opts = {
 							min_keyword_length = 3,
