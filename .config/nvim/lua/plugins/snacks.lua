@@ -166,10 +166,11 @@ return {
 					filter = { cwd = true },
 					sort = sort_by_ext_then_tests,
 				},
-				explorer = {
-					git_status = true,
-					git_untracked = true,
-					ignored = true,
+			explorer = {
+				git_status = true,
+				git_untracked = true,
+				hidden = true,
+				ignored = true,
 					win = {
 						input = {
 							keys = {

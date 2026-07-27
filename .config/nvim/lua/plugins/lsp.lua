@@ -50,6 +50,47 @@ local M = {
 			},
 		})
 
+		vim.lsp.config("tailwindcss", {
+			root_markers = {
+				"tailwind.config.js",
+				"tailwind.config.cjs",
+				"tailwind.config.mjs",
+				"tailwind.config.ts",
+				"package.json",
+			},
+			root_dir = function(bufnr, on_dir)
+				local path = vim.api.nvim_buf_get_name(bufnr)
+				if path == "" then
+					path = vim.fn.getcwd()
+				end
+				local root = vim.fs.root(path, { ".git", "package.json" })
+				if not root then
+					return
+				end
+
+				for _, f in ipairs({ "tailwind.config.js", "tailwind.config.cjs", "tailwind.config.mjs", "tailwind.config.ts" }) do
+					if vim.uv.fs_stat(root .. "/" .. f) then
+						on_dir(root)
+						return
+					end
+				end
+
+				local fd = io.open(root .. "/package.json", "r")
+				if not fd then
+					return
+				end
+				local content = fd:read("*a")
+				fd:close()
+				local ok, pkg = pcall(vim.json.decode, content)
+				if not ok or not pkg then
+					return
+				end
+				if (pkg.dependencies and pkg.dependencies.tailwindcss) or (pkg.devDependencies and pkg.devDependencies.tailwindcss) then
+					on_dir(root)
+				end
+			end,
+		})
+
 		vim.lsp.enable("lua_ls")
 		vim.lsp.enable("ts_ls")
 		vim.lsp.enable("eslint")
@@ -58,6 +99,7 @@ local M = {
 		vim.lsp.enable("html")
 		vim.lsp.enable("jsonls")
 		vim.lsp.enable("lemminx")
+		vim.lsp.enable("tailwindcss")
 
 		vim.api.nvim_create_autocmd("BufRead", {
 			pattern = "*.html",

@@ -65,47 +65,14 @@ local M = {
 			return false
 		end
 
-		require("blink.cmp").setup({
-		-- Enter accepts the selected suggestion (falls back to a newline
-		-- when no menu is visible). Esc dismisses the menu and leaves insert
-		-- mode in a single press.
-		keymap = {
-			preset = "none",
-			["<Tab>"] = { "accept", "snippet_forward", "fallback" },
-			["<S-Tab>"] = { "snippet_backward", "fallback" },
-			["<Up>"] = { "select_prev", "fallback" },
-			["<Down>"] = { "select_next", "fallback" },
-			["<C-p>"] = { "select_prev", "fallback" },
-			["<C-n>"] = { "select_next", "fallback" },
-			["<C-Space>"] = { "show", "show_documentation", "hide_documentation" },
-			["<C-e>"] = { "hide" },
-			["<Esc>"] = {
-				function(blink)
-					blink.hide()
-					return "\27"
-				end,
-			},
-			["<CR>"] = { "accept", "fallback" },
-				["<C-b>"] = { "scroll_documentation_up" },
-				["<C-f>"] = { "scroll_documentation_down" },
-			},
-		enabled = function()
-			local disabled = false
-			disabled = disabled or (vim.tbl_contains({ "markdown", "json", "jsonc" }, vim.bo.filetype))
-			disabled = disabled or (vim.bo.buftype == "prompt")
-			-- Treesitter parsers aren't installed here, so node-based detection
-			-- can't see string contexts. Scan the current line up to the cursor with
-			-- a small stack parser: it tracks quoted strings, template-literal
-			-- interpolations, and bracket contexts (both array literals and
-			-- indexing). Completions are suppressed inside string text, inside
-			-- `${...}` is still code, and inside `[...]` when the current element
-			-- (text since the last comma or opening `[`) is empty or purely
-			-- numeric (`arr[`, `arr[0`, `[1, 2, 3, 4`), while quoted keys
-			-- (`obj["key"]`) and non-numeric elements (`[foo, bar`) stay enabled.
-			if not disabled then
-				local col = vim.api.nvim_win_get_cursor(0)[2]
-				local before = vim.api.nvim_get_current_line():sub(1, col)
-				local stack, i = {}, 1
+		-- Parses the line text before the cursor and returns the top of the
+		-- context stack, or nil when the stack is empty (cursor in plain code).
+		-- Stack entries carry one of: `delim` (inside a quoted string), `interp`
+		-- (inside a `${}` template interpolation), `bracket`, `paren`, or
+		-- `brace`. Shared by `enabled()`, `sources.default`, and the lsp
+		-- `transform_items` filter so they agree on "inside a string".
+		local function context_top(before)
+			local stack, i = {}, 1
 			while i <= #before do
 				local ch = before:sub(i, i)
 				local top = stack[#stack]
@@ -138,12 +105,6 @@ local M = {
 						i = i + 1
 					end
 				elseif top and top.bracket then
-					-- Bracket context covers both array literals (`[1, 2, 3]`) and
-					-- indexing (`arr[0]`, `obj["key"]`). Quoted keys hand control
-					-- to the delim state, so bracket content only accumulates bare
-					-- element text. Track only the current element (reset on comma)
-					-- and suppress when it is empty or purely numeric, so typing
-					-- numbers never triggers LSP suggestions.
 					if ch == "]" then
 						stack[#stack] = nil
 						i = i + 1
@@ -160,65 +121,51 @@ local M = {
 						top.content = top.content .. ch
 						i = i + 1
 					end
-			elseif top and top.paren then
-				-- Argument-list context `(...)`. Only `call` parens (preceded
-				-- by an identifier / `)` / `]`, i.e. a real function call) are
-				-- candidates for the no-signature suppression below; grouping
-				-- and control-flow parens (`if (`, `(a + b)`) stay enabled.
-				if ch == ")" then
-					stack[#stack] = nil
-					i = i + 1
+				elseif top and top.paren then
+					if ch == ")" then
+						stack[#stack] = nil
+						i = i + 1
+					elseif ch == "'" or ch == '"' or ch == "`" then
+						stack[#stack + 1] = { delim = ch }
+						i = i + 1
+					else
+						i = i + 1
+					end
+				elseif top and top.brace then
+					if ch == "}" then
+						stack[#stack] = nil
+						i = i + 1
+					elseif ch == "'" or ch == '"' or ch == "`" then
+						stack[#stack + 1] = { delim = ch }
+						i = i + 1
+					elseif ch == "{" then
+						stack[#stack + 1] = { brace = true, object = is_object_brace(before, i - 1), content = "", colon = false }
+						i = i + 1
+					elseif top.object then
+						if ch == "," then
+							top.content = ""
+							top.colon = false
+							i = i + 1
+						elseif ch == ":" then
+							top.colon = true
+							i = i + 1
+						else
+							top.content = top.content .. ch
+							i = i + 1
+						end
+					else
+						i = i + 1
+					end
 				elseif ch == "'" or ch == '"' or ch == "`" then
 					stack[#stack + 1] = { delim = ch }
 					i = i + 1
-				else
-					i = i + 1
-				end
-			elseif top and top.brace then
-				-- Brace context covers both object literals (`{ k: v }`) and
-				-- code blocks (`if () {`, `() => {`, `function foo() {`). Only
-				-- object-literal braces suppress: while the current element
-				-- (text since the last `,` or opening `{`) has no `:`, the
-				-- cursor is on a property key, so LSP suggestions are hidden.
-				-- Once `:` is seen we're in value position and stay enabled.
-				if ch == "}" then
-					stack[#stack] = nil
-					i = i + 1
-				elseif ch == "'" or ch == '"' or ch == "`" then
-					stack[#stack + 1] = { delim = ch }
+				elseif ch == "[" then
+					stack[#stack + 1] = { bracket = true, content = "" }
 					i = i + 1
 				elseif ch == "{" then
 					stack[#stack + 1] = { brace = true, object = is_object_brace(before, i - 1), content = "", colon = false }
 					i = i + 1
-				elseif top.object then
-					if ch == "," then
-						top.content = ""
-						top.colon = false
-						i = i + 1
-					elseif ch == ":" then
-						top.colon = true
-						i = i + 1
-					else
-						top.content = top.content .. ch
-						i = i + 1
-					end
-				else
-					i = i + 1
-				end
-			elseif ch == "'" or ch == '"' or ch == "`" then
-					stack[#stack + 1] = { delim = ch }
-					i = i + 1
-			elseif ch == "[" then
-				stack[#stack + 1] = { bracket = true, content = "" }
-				i = i + 1
-			elseif ch == "{" then
-				stack[#stack + 1] = { brace = true, object = is_object_brace(before, i - 1), content = "", colon = false }
-				i = i + 1
-			elseif ch == "(" then
-					-- Decide call vs. grouping by the token immediately before
-					-- `(` (skipping whitespace). A preceding identifier that is
-					-- not a control-flow keyword, or a preceding `)` / `]`,
-					-- marks a function-call argument list.
+				elseif ch == "(" then
 					local j = i - 1
 					while j >= 1 and (before:sub(j, j) == " " or before:sub(j, j) == "\t") do
 						j = j - 1
@@ -248,17 +195,82 @@ local M = {
 					i = i + 1
 				end
 			end
-		local top = stack[#stack]
-		disabled = top ~= nil
-			and (top.delim ~= nil
-				or (top.bracket ~= nil and top.content:match("^%s*%d*$") ~= nil)
-				or (top.brace ~= nil and top.object and not top.colon))
+			return stack[#stack]
 		end
+
+		-- True when a tailwindcss language server is attached to the buffer.
+		-- Tailwind class names live inside string literals, so the string
+		-- suppression in `enabled()` is relaxed only when this is true.
+		local function tailwind_attached()
+			return #vim.lsp.get_clients({ bufnr = 0, name = "tailwindcss" }) > 0
+		end
+
+		-- Top of the context stack at the cursor, for the shared string check.
+		local function current_top()
+			local col = vim.api.nvim_win_get_cursor(0)[2]
+			local before = vim.api.nvim_get_current_line():sub(1, col)
+			return context_top(before)
+		end
+
+		require("blink.cmp").setup({
+		-- Enter accepts the selected suggestion (falls back to a newline
+		-- when no menu is visible). Esc dismisses the menu and leaves insert
+		-- mode in a single press.
+		keymap = {
+			preset = "none",
+			["<Tab>"] = { "accept", "snippet_forward", "fallback" },
+			["<S-Tab>"] = { "snippet_backward", "fallback" },
+			["<Up>"] = { "select_prev", "fallback" },
+			["<Down>"] = { "select_next", "fallback" },
+			["<C-p>"] = { "select_prev", "fallback" },
+			["<C-n>"] = { "select_next", "fallback" },
+			["<C-Space>"] = { "show", "show_documentation", "hide_documentation" },
+			["<C-e>"] = { "hide" },
+			["<Esc>"] = {
+				function(blink)
+					blink.hide()
+					return "\27"
+				end,
+			},
+			["<CR>"] = { "accept", "fallback" },
+				["<C-b>"] = { "scroll_documentation_up" },
+				["<C-f>"] = { "scroll_documentation_down" },
+			},
+		enabled = function()
+			local disabled = false
+			disabled = disabled or (vim.tbl_contains({ "markdown", "json", "jsonc" }, vim.bo.filetype))
+			disabled = disabled or (vim.bo.buftype == "prompt")
+			if not disabled then
+				local top = current_top()
+				if top ~= nil and top.delim ~= nil then
+					-- Inside a quoted string. Tailwind class names are typed
+					-- inside string literals (e.g. `className="flex p-4"`), so
+					-- keep the menu enabled when a tailwindcss server is
+					-- attached; otherwise preserve the existing suppression.
+					if not tailwind_attached() then
+						disabled = true
+					end
+				else
+					disabled = top ~= nil
+						and (top.delim ~= nil
+							or (top.bracket ~= nil and top.content:match("^%s*%d*$") ~= nil)
+							or (top.brace ~= nil and top.object and not top.colon))
+				end
+			end
 			return not disabled
 		end,
 			snippets = { preset = "luasnip" },
 		sources = {
-			default = { "lsp", "path", "snippets" },
+			default = function()
+				local top = current_top()
+				if top ~= nil and top.delim ~= nil and tailwind_attached() then
+					-- Inside a string with tailwindcss attached: only the lsp
+					-- source can produce tailwind class items, so drop path and
+					-- snippets to avoid noise inside the class literal.
+					return { "lsp" }
+				end
+				return { "lsp", "path", "snippets" }
+			end,
 			-- Require 3+ characters before auto-suggesting, so typing short
 			-- fragments doesn't pop the menu. Trigger characters (e.g. `.`
 			-- member access) and manual shows (`<C-Space>`) bypass the limit.
@@ -269,13 +281,27 @@ local M = {
 				return 3
 			end,
 			providers = {
-					buffer = {
-						opts = {
-							min_keyword_length = 3,
-						},
+				lsp = {
+					-- In string context, keep only items coming from the
+					-- tailwindcss client so other attached servers (ts_ls,
+					-- cssls, ...) don't leak completions into class literals.
+					transform_items = function(_, items)
+						local top = current_top()
+						if top == nil or top.delim == nil then
+							return items
+						end
+						return vim.tbl_filter(function(item)
+							return item.client_name == "tailwindcss"
+						end, items)
+					end,
+				},
+				buffer = {
+					opts = {
+						min_keyword_length = 3,
 					},
 				},
 			},
+		},
 		appearance = {
 			nerd_font_variant = "mono",
 		},

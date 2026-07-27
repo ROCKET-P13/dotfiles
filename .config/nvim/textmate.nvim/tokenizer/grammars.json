@@ -39,6 +39,10 @@
     "file": "html.tmLanguage.json",
     "url": "https://raw.githubusercontent.com/microsoft/vscode/main/extensions/html/syntaxes/html.tmLanguage.json"
   },
+  "source.css": {
+    "file": "css.tmLanguage.json",
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/main/extensions/css/syntaxes/css.tmLanguage.json"
+  },
   "text.xml": {
     "file": "xml.tmLanguage.json",
     "url": "https://raw.githubusercontent.com/microsoft/vscode/main/extensions/xml/syntaxes/xml.tmLanguage.json"

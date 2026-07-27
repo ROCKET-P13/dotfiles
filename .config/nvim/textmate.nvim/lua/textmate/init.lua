@@ -17,6 +17,7 @@ local DEFAULT_FILETYPES = {
 	c = "source.c",
 	rust = "source.rust",
 	cs = "source.cs",
+	css = "source.css",
 	html = "text.html.basic",
 	xml = "text.xml",
 }

@@ -14,6 +14,8 @@ local M = {
 			"json",
 			"javascript",
 			"typescript",
+			"tsx",
+			"jsx",
 			"c",
 			"c_sharp",
 			"lua",
