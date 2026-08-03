@@ -41,6 +41,14 @@ local function is_test_path(rel)
 	return false
 end
 
+-- Markup / metadata files that are rarely the edit target when a source file
+-- with the same fuzzy match exists. Pushed below regular files but above test
+-- files. Covers .xml / .html / .htm (case-insensitive).
+local function is_xml_html_path(rel)
+	local low = rel:lower()
+	return low:match("%.xml$") ~= nil or low:match("%.html?$") ~= nil
+end
+
 -- VSCode-ish bonus weights.
 local BOUNDARY = 8 -- preceded by separator or at start of target
 local CAMEL = 7 -- lower -> upper transition (camelCase boundary)
@@ -177,7 +185,13 @@ function M.goodness(prompt, line, entry, opts)
 	opts = opts or {}
 	local recency_weight = opts.recency_weight or 12
 	local test_penalty = opts.test_penalty or 1000
-	local penalty = is_test_path(line) and test_penalty or 0
+	local xml_html_penalty = opts.xml_html_penalty or 500
+	local penalty = 0
+	if is_test_path(line) then
+		penalty = test_penalty
+	elseif is_xml_html_path(line) then
+		penalty = xml_html_penalty
+	end
 	local boost = entry.is_mru and (recency_weight / (entry.recency_rank + 1)) or 0
 	if prompt == nil or prompt == "" then
 		-- empty prompt: pure recency order, MRU first, test files last
@@ -217,8 +231,13 @@ function M.new(opts)
 	opts = opts or {}
 	local recency_weight = opts.recency_weight or 12
 	local test_penalty = opts.test_penalty or 1000
+	local xml_html_penalty = opts.xml_html_penalty or 500
 	local BIG = 1e9
-	local scorer_opts = { recency_weight = recency_weight, test_penalty = test_penalty }
+	local scorer_opts = {
+		recency_weight = recency_weight,
+		test_penalty = test_penalty,
+		xml_html_penalty = xml_html_penalty,
+	}
 
 	return sorters.Sorter:new({
 		discard = false,

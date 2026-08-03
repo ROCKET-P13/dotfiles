@@ -270,6 +270,7 @@ function M.make_finder(candidates, opts)
 	local scorer_opts = {
 		recency_weight = opts.recency_weight,
 		test_penalty = opts.test_penalty,
+		xml_html_penalty = opts.xml_html_penalty,
 	}
 	local finders = require("telescope.finders")
 	return finders.new_dynamic({

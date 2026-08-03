@@ -15,6 +15,7 @@ local defaults = {
 	max_files = 50000,
 	max_results = 25,
 	exclude_ext = { csv = true },
+	xml_html_penalty = 500,
 }
 
 -- Buffer types / schemes we never want to record as "recently opened".

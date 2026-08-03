@@ -7,19 +7,19 @@ local M = {
 	config = function()
 		vim.lsp.config("lua_ls", {
 			root_markers = { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" },
-		root_dir = function(bufnr, on_dir)
-			local path = vim.api.nvim_buf_get_name(bufnr)
-			if path == "" then
-				path = vim.fn.getcwd()
-			end
-			local config = vim.fn.stdpath("config")
-			if vim.startswith(path, config .. "/") then
-				on_dir(config)
-				return
-			end
-			local root = vim.fs.root(path, { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" })
-			on_dir(root or vim.fn.stdpath("config"))
-		end,
+			root_dir = function(bufnr, on_dir)
+				local path = vim.api.nvim_buf_get_name(bufnr)
+				if path == "" then
+					path = vim.fn.getcwd()
+				end
+				local config = vim.fn.stdpath("config")
+				if vim.startswith(path, config .. "/") then
+					on_dir(config)
+					return
+				end
+				local root = vim.fs.root(path, { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" })
+				on_dir(root or vim.fn.stdpath("config"))
+			end,
 			settings = {
 				Lua = {
 					workspace = { checkThirdParty = false },
@@ -51,6 +51,24 @@ local M = {
 		})
 
 		vim.lsp.config("tailwindcss", {
+			-- Spawn the language server directly. lspconfig's default ships
+			-- `cmd` as a function (to prefer a local `node_modules/.bin`
+			-- copy), which the native `vim.lsp.enable` path does not invoke,
+			-- so the server never started. A plain list spawns the global
+			-- binary on $PATH directly.
+			cmd = { "tailwindcss-language-server", "--stdio" },
+			filetypes = {
+				"html",
+				"css",
+				"scss",
+				"less",
+				"javascript",
+				"javascriptreact",
+				"typescript",
+				"typescriptreact",
+				"tsx",
+				"jsx",
+			},
 			root_markers = {
 				"tailwind.config.js",
 				"tailwind.config.cjs",
@@ -63,12 +81,17 @@ local M = {
 				if path == "" then
 					path = vim.fn.getcwd()
 				end
-				local root = vim.fs.root(path, { ".git", "package.json" })
+				local root = vim.fs.root(path, { "package.json" })
 				if not root then
 					return
 				end
 
-				for _, f in ipairs({ "tailwind.config.js", "tailwind.config.cjs", "tailwind.config.mjs", "tailwind.config.ts" }) do
+				for _, f in ipairs({
+					"tailwind.config.js",
+					"tailwind.config.cjs",
+					"tailwind.config.mjs",
+					"tailwind.config.ts",
+				}) do
 					if vim.uv.fs_stat(root .. "/" .. f) then
 						on_dir(root)
 						return
@@ -85,7 +108,10 @@ local M = {
 				if not ok or not pkg then
 					return
 				end
-				if (pkg.dependencies and pkg.dependencies.tailwindcss) or (pkg.devDependencies and pkg.devDependencies.tailwindcss) then
+				if
+					(pkg.dependencies and pkg.dependencies.tailwindcss)
+					or (pkg.devDependencies and pkg.devDependencies.tailwindcss)
+				then
 					on_dir(root)
 				end
 			end,

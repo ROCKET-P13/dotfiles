@@ -22,6 +22,7 @@ function M.open(opts)
 		max_results = opts.max_results,
 		recency_weight = opts.recency_weight,
 		test_penalty = opts.test_penalty,
+		xml_html_penalty = opts.xml_html_penalty,
 	})
 	local sorter = sorter_mod.new({ recency_weight = opts.recency_weight })
 
