@@ -393,6 +393,14 @@ local function reload_buffer(abs)
 	end)
 end
 
+local function in_header(s)
+	if not (s.panel_win and vim.api.nvim_win_is_valid(s.panel_win)) then
+		return false
+	end
+	local row = vim.api.nvim_win_get_cursor(s.panel_win)[1] - 1
+	return row < ROW_STATUS
+end
+
 local function line_under_cursor(s)
 	local row = vim.api.nvim_win_get_cursor(s.panel_win)[1] - 1
 	return s.row_to_line[row]
@@ -527,6 +535,22 @@ local function wire_keys(s)
 	map(s, "n", "q", function()
 		M.close()
 	end)
+	-- Re-entering insert mode via a keypress is blocked by the modifiable check
+	-- before InsertEnter can flip it back on (E21). Intercept the insert-entry
+	-- keys in normal mode: set modifiable on for header rows first, then re-feed
+	-- the key so InsertEnter fires normally. On results rows we leave modifiable
+	-- off, so the re-fed key is blocked and the region stays read-only. Line-
+	-- deleting operators (dd, J, o, ...) are not mapped here, so they remain
+	-- blocked everywhere by the read-only buffer and can't shift the layout.
+	for _, key in ipairs({ "i", "a", "I", "A", "s", "S" }) do
+		map(s, "n", key, function()
+			if in_header(s) then
+				vim.bo[s.buf].modifiable = true
+			end
+			local nested = vim.api.nvim_replace_termcodes(key, true, false, true)
+			vim.api.nvim_feedkeys(nested, "n", false)
+		end)
+	end
 	map(s, "i", "<Esc>", function()
 		vim.cmd("stopinsert")
 	end)
@@ -598,16 +622,14 @@ local function attach_autocmds(s)
 	-- Modifiable is enabled only for the input header rows (0..ROW_STATUS-1)
 	-- and only in insert mode. Anywhere else the buffer stays read-only, so the
 	-- results region can't be edited and normal-mode line-deleting operators
-	-- (dd, J, cc, o, ...) can't shift the fixed-row layout.
-	local function in_header()
-		local row = vim.api.nvim_win_get_cursor(s.panel_win)[1] - 1
-		return row < ROW_STATUS
-	end
+	-- (dd, J, cc, o, ...) can't shift the fixed-row layout. Re-entering insert
+	-- mode via i/a/etc. is handled by keymaps in wire_keys (see comment there);
+	-- this autocmd covers programmatic entry (e.g. startinsert on open).
 	vim.api.nvim_create_autocmd("InsertEnter", {
 		group = s.augroup,
 		buffer = s.buf,
 		callback = function()
-			if not in_header() then
+			if not in_header(s) then
 				vim.cmd("stopinsert")
 				return
 			end
