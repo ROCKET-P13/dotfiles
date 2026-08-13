@@ -220,7 +220,26 @@ local function render(s)
 		end
 	end
 
+	-- Self-heal: the input header must occupy rows 0..ROW_STATUS-1 before the
+	-- results are written. If prior edits shrank the buffer below ROW_STATUS
+	-- lines, pad with blanks so the results always land at ROW_STATUS and never
+	-- append into the input region.
+	local cur_count = vim.api.nvim_buf_line_count(s.buf)
+	if cur_count < ROW_STATUS then
+		local pad = {}
+		for _ = cur_count + 1, ROW_STATUS do
+			pad[#pad + 1] = ""
+		end
+		local was_mod = vim.bo[s.buf].modifiable
+		vim.bo[s.buf].modifiable = true
+		vim.api.nvim_buf_set_lines(s.buf, cur_count, cur_count, false, pad)
+		vim.bo[s.buf].modifiable = was_mod
+	end
+
+	local was_mod = vim.bo[s.buf].modifiable
+	vim.bo[s.buf].modifiable = true
 	vim.api.nvim_buf_set_lines(s.buf, ROW_STATUS, -1, false, out)
+	vim.bo[s.buf].modifiable = was_mod
 	vim.api.nvim_buf_clear_namespace(s.buf, NS_HL, 0, -1)
 	s.row_to_line = map
 
@@ -403,6 +422,7 @@ local function open_match(s)
 	vim.cmd("edit " .. vim.fn.fnameescape(rec.abs))
 	pcall(vim.api.nvim_win_set_cursor, s.main_win, { rec.lrec.lnum, span.col })
 	vim.cmd("normal! zz")
+	M.close()
 end
 
 local function replace_one(s)
@@ -465,7 +485,10 @@ local function replace_all(s)
 end
 
 local function set_input(s, row, value)
+	local was_mod = vim.bo[s.buf].modifiable
+	vim.bo[s.buf].modifiable = true
 	vim.api.nvim_buf_set_lines(s.buf, row, row + 1, false, { value or "" })
+	vim.bo[s.buf].modifiable = was_mod
 end
 
 local function apply_labels(s)
@@ -507,6 +530,20 @@ local function wire_keys(s)
 	map(s, "i", "<Esc>", function()
 		vim.cmd("stopinsert")
 	end)
+	-- The header inputs are single-line; never let Enter split a row or let
+	-- Backspace at column 0 merge a header row into the one above, since either
+	-- would change the line count and shift the fixed-row results region.
+	map(s, "i", "<CR>", function() end)
+	map(s, "i", "<BS>", function()
+		local cursor = vim.api.nvim_win_get_cursor(s.panel_win)
+		if cursor[2] == 0 and cursor[1] - 1 < ROW_STATUS then
+			return
+		end
+		-- Re-feed with no-remap so nvim runs its native insert-mode backspace
+		-- (the "n" flag skips this mapping, so there is no recursion).
+		local nested = vim.api.nvim_replace_termcodes("<BS>", true, false, true)
+		vim.api.nvim_feedkeys(nested, "n", false)
+	end)
 end
 
 local function open_panel(s, seed)
@@ -542,6 +579,11 @@ local function open_panel(s, seed)
 		{ "", search_seed, (last and last.replace) or "", (last and last.include) or "", (last and last.exclude) or "" }
 	)
 	apply_labels(s)
+	-- The buffer is read-only by default; modifiable is toggled on only while the
+	-- cursor sits in an input header row in insert mode (see attach_autocmds).
+	-- This keeps the results region immutable and prevents line-count changes
+	-- (dd, J, o, cc, etc.) from shifting the fixed-row layout.
+	vim.bo[s.buf].modifiable = false
 end
 
 local function attach_autocmds(s)
@@ -551,6 +593,32 @@ local function attach_autocmds(s)
 		buffer = s.buf,
 		callback = function()
 			schedule_search(s)
+		end,
+	})
+	-- Modifiable is enabled only for the input header rows (0..ROW_STATUS-1)
+	-- and only in insert mode. Anywhere else the buffer stays read-only, so the
+	-- results region can't be edited and normal-mode line-deleting operators
+	-- (dd, J, cc, o, ...) can't shift the fixed-row layout.
+	local function in_header()
+		local row = vim.api.nvim_win_get_cursor(s.panel_win)[1] - 1
+		return row < ROW_STATUS
+	end
+	vim.api.nvim_create_autocmd("InsertEnter", {
+		group = s.augroup,
+		buffer = s.buf,
+		callback = function()
+			if not in_header() then
+				vim.cmd("stopinsert")
+				return
+			end
+			vim.bo[s.buf].modifiable = true
+		end,
+	})
+	vim.api.nvim_create_autocmd("InsertLeave", {
+		group = s.augroup,
+		buffer = s.buf,
+		callback = function()
+			vim.bo[s.buf].modifiable = false
 		end,
 	})
 	vim.api.nvim_create_autocmd("WinClosed", {

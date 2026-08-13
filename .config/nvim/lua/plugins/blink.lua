@@ -318,7 +318,7 @@ local M = {
 						-- snippets to avoid noise inside the class literal.
 						return { "lsp" }
 					end
-					return { "lsp", "path", "snippets" }
+					return { "lsp", "snippets" }
 				end,
 				-- Require 3+ characters before auto-suggesting, so typing short
 				-- fragments doesn't pop the menu. Trigger characters (e.g. `.`

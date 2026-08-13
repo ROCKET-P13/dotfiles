@@ -5,6 +5,7 @@
 .config/gh/**
 !README.md
 !.zshrc
+!.p10k.zsh
 !.tmux.conf
 !.tmux-new-session-prefix.sh
 !.tmux-rename-session.sh
