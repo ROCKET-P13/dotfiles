@@ -3,6 +3,7 @@
 !.config/**
 .config/cursor/**
 .config/gh/**
+.config/btop/**
 !README.md
 !.zshrc
 !.p10k.zsh
