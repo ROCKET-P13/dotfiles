@@ -4,6 +4,7 @@
 .config/cursor/**
 .config/gh/**
 .config/btop/**
+.config/htop/**
 !README.md
 !.zshrc
 !.p10k.zsh
