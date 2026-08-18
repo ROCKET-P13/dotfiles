@@ -25,6 +25,7 @@ local DEFAULT_FILETYPES = {
 local state = {
 	client = nil,
 	config = nil,
+	client_started = false,
 }
 
 local function plugin_root()
@@ -96,12 +97,35 @@ local function scope_for_buf(buf)
 	return state.config.filetypes[ft]
 end
 
+--- Starts the tokenizer process on first attach. Idempotent: subsequent calls
+--- are no-ops once the client is started. The colormap callback must register
+--- before any tokenize pass, so it is wired here rather than in setup().
+local function ensure_client()
+	if state.client_started then
+		return
+	end
+	state.client_started = true
+	local config = state.config
+	local client = client_mod.new()
+	state.client = client
+	client:start({ node = config.node, tokenizer = config.tokenizer, theme = config.theme_file })
+	client:when_ready(function()
+		theme.set_colormap(client.color_map)
+	end)
+	highlighter.setup({
+		client = client,
+		throttle_ms = config.throttle_ms,
+		max_lines = config.max_lines,
+	})
+end
+
 function M.attach_buf(buf)
 	buf = buf or vim.api.nvim_get_current_buf()
 	local scope_name = scope_for_buf(buf)
 	if not scope_name then
 		return false
 	end
+	ensure_client()
 	if state.config.replace_treesitter then
 		stop_treesitter(buf)
 		stop_syntax(buf)
@@ -151,10 +175,12 @@ function M.setup(opts)
 	opts = opts or {}
 	local root = plugin_root()
 
+	local theme_name = opts.theme or "gruvbox-dark-hard"
 	local config = {
 		node = resolve_node(opts.node),
 		tokenizer = root .. "/tokenizer/tokenizer.js",
-		theme = opts.theme or "gruvbox-dark-hard",
+		theme = theme_name,
+		theme_file = theme_path(root, theme_name),
 		filetypes = vim.tbl_extend("force", DEFAULT_FILETYPES, opts.filetypes or {}),
 		replace_treesitter = opts.replace_treesitter ~= false,
 		auto_attach = opts.auto_attach ~= false,
@@ -176,26 +202,13 @@ function M.setup(opts)
 		)
 		return
 	end
-	local theme_file = theme_path(root, config.theme)
-	if vim.fn.filereadable(theme_file) ~= 1 then
-		vim.notify("[textmate] theme not found: " .. theme_file, vim.log.levels.ERROR)
+	if vim.fn.filereadable(config.theme_file) ~= 1 then
+		vim.notify("[textmate] theme not found: " .. config.theme_file, vim.log.levels.ERROR)
 		return
 	end
 
-	local client = client_mod.new()
-	state.client = client
-	client:start({ node = config.node, tokenizer = config.tokenizer, theme = theme_file })
-
-	-- Must run before any tokenize pass so highlight groups can be built.
-	client:when_ready(function()
-		theme.set_colormap(client.color_map)
-	end)
-
-	highlighter.setup({
-		client = client,
-		throttle_ms = config.throttle_ms,
-		max_lines = config.max_lines,
-	})
+	-- The tokenizer process is started lazily on the first attach_buf call so
+	-- sessions that never open a mapped filetype pay nothing.
 
 	if config.auto_attach then
 		local group = vim.api.nvim_create_augroup("textmate_auto_attach", { clear = true })

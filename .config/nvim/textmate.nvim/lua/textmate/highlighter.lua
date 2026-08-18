@@ -13,7 +13,15 @@ local theme = require("textmate.theme")
 
 local M = {}
 
--- buf -> { ns, scope_name, attached, timer, last_run, inflight, dirty, tick }
+-- buf -> { ns, scope_name, attached, timer, last_run, inflight, dirty, tick,
+--          pending, dirty_full, partial }
+--   pending: { firstline, lastline, new_lastline } | nil
+--     A single on_lines edit not yet sent. If a second edit arrives before the
+--     first is sent, `dirty_full` is set and the next pass falls back to a
+--     whole-buffer tokenize.
+--   dirty_full: bool
+--     Force a full-buffer send on the next pass (multi-edit coalescing, or any
+--     case where the incremental range path can't be used safely).
 local state = {}
 
 local config = {
@@ -87,6 +95,63 @@ local function send_tokenize(buf, limit)
 		st.dirty = true
 		return
 	end
+
+	-- Incremental path: exactly one edit pending, no partial-paint limit, no
+	-- full-buffer fallback flagged. Sends only the changed line range; the
+	-- tokenizer splices it into its cached buffer state and re-tokenizes from
+	-- the edit's start row until state convergence with the unchanged suffix.
+	local pending = st.pending
+	if pending and not st.dirty_full and limit == nil then
+		st.pending = nil
+		st.dirty_full = false
+		st.inflight = true
+		st.tick = vim.api.nvim_buf_get_changedtick(buf)
+		local lines = vim.api.nvim_buf_get_lines(buf, pending.firstline, pending.new_lastline, false)
+		config.client:tokenize_range(
+			buf,
+			st.scope_name,
+			pending.firstline,
+			pending.lastline,
+			pending.new_lastline,
+			lines,
+			function(err, result)
+				vim.schedule(function()
+					local s = state[buf]
+					if not s or not s.attached then
+						return
+					end
+					s.inflight = false
+					if err then
+						-- No cached base (e.g. after a drop) or stale cache: retry
+						-- with a full-buffer tokenize on the next pass.
+						s.dirty = true
+					elseif not vim.api.nvim_buf_is_valid(buf) then
+						return
+					elseif vim.api.nvim_buf_get_changedtick(buf) == s.tick then
+						paint_range(buf, s.ns, result.start, result.stop, result.tokens)
+					else
+						-- The buffer changed during the request, so the result's
+						-- line numbers no longer line up and the cached base is
+						-- stale. Discard it and force a full re-tokenize.
+						config.client:drop(buf)
+						s.dirty_full = true
+						s.dirty = true
+					end
+					if s.dirty then
+						s.dirty = false
+						schedule(buf)
+					end
+				end)
+			end
+		)
+		return
+	end
+
+	-- Full-buffer path: initial attach (with optional partial-paint limit),
+	-- reload, multi-edit coalescing, or a range-path fallback. Re-sends the
+	-- whole buffer; the tokenizer diffs against its cached base.
+	st.pending = nil
+	st.dirty_full = false
 	local send_count = line_count
 	local partial = false
 	if limit and limit < line_count then
@@ -199,12 +264,28 @@ function M.attach(buf, scope_name)
 		return
 	end
 	local ns = vim.api.nvim_create_namespace("textmate:" .. buf)
-	state[buf] = { ns = ns, scope_name = scope_name, attached = true }
+	state[buf] = {
+		ns = ns,
+		scope_name = scope_name,
+		attached = true,
+		pending = nil,
+		dirty_full = false,
+	}
 
 	vim.api.nvim_buf_attach(buf, false, {
-		on_lines = function()
+		on_lines = function(_, _, _, firstline, lastline, new_lastline)
 			if not state[buf] or not state[buf].attached then
 				return true -- detach the callback
+			end
+			local st = state[buf]
+			if st.pending then
+				-- A second edit arrived before the first was sent. The single-edit
+				-- splice can't represent two disjoint edits safely, so fall back
+				-- to a whole-buffer tokenize on the next pass.
+				st.pending = nil
+				st.dirty_full = true
+			else
+				st.pending = { firstline = firstline, lastline = lastline, new_lastline = new_lastline }
 			end
 			schedule(buf)
 		end,
@@ -216,6 +297,9 @@ function M.attach(buf, scope_name)
 			-- wipes every extmark and replaces all lines. Drop the cached base so
 			-- the next pass is a full re-tokenize, repainting the whole buffer
 			-- rather than only an incremental diff.
+			local st = state[buf]
+			st.pending = nil
+			st.dirty_full = false
 			config.client:drop(buf)
 			schedule(buf)
 		end,
@@ -238,6 +322,8 @@ function M.detach(buf)
 		return
 	end
 	st.attached = false
+	st.pending = nil
+	st.dirty_full = false
 	if st.timer then
 		st.timer:stop()
 		st.timer:close()

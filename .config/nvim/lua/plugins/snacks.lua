@@ -602,7 +602,7 @@ return {
 		{
 			"<leader>un",
 			function()
-				Snacks.notifier.hide()
+				require("notify").dismiss({ silent = true, pending = true })
 			end,
 			desc = "Dismiss All Notifications",
 		},

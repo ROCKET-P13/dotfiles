@@ -153,6 +153,47 @@ function Client:drop(buf)
 	vim.fn.chansend(self.job, vim.json.encode({ type = "drop", bufId = buf }) .. "\n")
 end
 
+--- Incremental tokenize: send only the changed line range instead of the whole
+--- buffer. `start_row`/`end_row` are the replaced range in the OLD buffer
+--- (on_lines `firstline`/`lastline`); `new_end_row` is the end row in the NEW
+--- buffer (on_lines `new_lastline`); `lines` are the new buffer rows for
+--- [start_row, new_end_row). Only valid when the tokenizer already has cached
+--- state for `buf`; the server replies with an error otherwise and the caller
+--- should retry with `tokenize`.
+--- @param buf integer
+--- @param scope_name string
+--- @param start_row integer
+--- @param end_row integer
+--- @param new_end_row integer
+--- @param lines string[]
+--- @param callback fun(err: string|nil, result: table|nil)
+function Client:tokenize_range(buf, scope_name, start_row, end_row, new_end_row, lines, callback)
+	if not self.job then
+		callback("tokenizer not running", nil)
+		return
+	end
+	self.next_id = self.next_id + 1
+	local id = self.next_id
+	self.pending[id] = function(err, msg)
+		if err then
+			callback(err, nil)
+		else
+			callback(nil, msg)
+		end
+	end
+	local payload = vim.json.encode({
+		id = id,
+		type = "tokenizeRange",
+		bufId = buf,
+		scopeName = scope_name,
+		startRow = start_row,
+		endRow = end_row,
+		newEndRow = new_end_row,
+		lines = lines,
+	})
+	vim.fn.chansend(self.job, payload .. "\n")
+end
+
 function Client:stop()
 	if self.job then
 		vim.fn.jobstop(self.job)

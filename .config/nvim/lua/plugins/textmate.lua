@@ -7,7 +7,24 @@
 return {
 	dir = vim.fn.stdpath("config") .. "/textmate.nvim",
 	name = "textmate.nvim",
-	lazy = false,
+	lazy = true,
+	-- Loaded on the first FileType for a mapped grammar. The tokenizer Node
+	-- process is then started lazily on the first attach, so sessions that never
+	-- open one of these filetypes pay nothing.
+	ft = {
+		"javascript",
+		"javascriptreact",
+		"typescript",
+		"typescriptreact",
+		"json",
+		"jsonc",
+		"c",
+		"rust",
+		"cs",
+		"css",
+		"html",
+		"xml",
+	},
 	-- Installs the Node tokenizer deps and downloads grammar files.
 	-- Re-run manually with `:Lazy build textmate.nvim`.
 	build = "cd tokenizer && npm install && node fetch-grammars.js",
@@ -20,7 +37,7 @@ return {
 			replace_treesitter = true, -- stop TS highlight on attached buffers
 			auto_attach = true, -- attach on FileType for mapped filetypes
 			-- node = "node",              -- override node binary path
-			throttle_ms = 40, -- how often to re-highlight while typing
+			throttle_ms = 80, -- how often to re-highlight while typing
 			-- Files above this line count are skipped (no highlighting). Raised
 			-- from the 5000 default; each tokenize pass re-sends the whole buffer,
 			-- so very large files cost more per edit.

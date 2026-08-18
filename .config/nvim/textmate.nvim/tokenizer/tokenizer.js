@@ -20,6 +20,11 @@
 //             are unchanged and reuse the client's existing highlights.
 //             s/e = byte offsets, c = color-map index, y = font-style bits
 //             (1=italic, 2=bold, 4=underline, 8=strikethrough)
+//   RangeReq: { "id": <n>, "type": "tokenizeRange", "bufId": <n>, "scopeName": "source.ts",
+//               "startRow": <n>, "endRow": <n>, "newEndRow": <n>, "lines": ["..."] }
+//             lines are the NEW buffer rows for [startRow, newEndRow); startRow/endRow
+//             are the replaced range in the OLD buffer. Reuses the cached prefix and
+//             suffix. Errors when no cached state exists; caller retries with `tokenize`.
 //   Drop:     { "type": "drop", "bufId": <n> }  (frees cached buffer state; no reply)
 //   Ready:    { "type": "ready", "colorMap": ["#......", ...] }
 //
@@ -216,6 +221,65 @@ async function main() {
     return { start: prefix, stop: i, tokens: changed, lineCount: newLen };
   }
 
+  // Re-tokenize a single edited region whose bounds are already known (from
+  // Neovim's on_lines change info), avoiding both the O(n) textual diff and the
+  // O(n) wire cost of resending the whole buffer. `firstline`/`endRow` are the
+  // replaced row range in the OLD buffer; `newEndRow` is the end row in the NEW
+  // buffer; `lines` are the new buffer rows for [firstline, newEndRow). The
+  // unchanged prefix [0, firstline) and suffix [endRow, oldLen) are reused from
+  // cache. Requires cached state for `bufId`; the caller falls back to a full
+  // tokenize otherwise.
+  function tokenizeRange(grammar, bufId, scopeName, firstline, endRow, newEndRow, rangeLines) {
+    const prev = bufferState.get(bufId);
+    if (!prev || prev.scopeName !== scopeName) {
+      return null;
+    }
+    const oldLines = prev.lines;
+    const oldEnd = prev.endState;
+    const oldLen = oldLines.length;
+
+    const newLines = oldLines
+      .slice(0, firstline)
+      .concat(rangeLines)
+      .concat(oldLines.slice(endRow));
+    const newLen = newLines.length;
+
+    const newEnd = oldEnd.slice(0, firstline);
+    const changed = [];
+    let stack = beginStateAt(oldEnd, firstline);
+    let i = firstline;
+    while (i < newLen) {
+      // Inside the unchanged textual suffix, an identical begin state guarantees
+      // identical tokens for this and every following line, so stop early.
+      // New row i maps to old row (endRow + i - newEndRow).
+      if (i >= newEndRow) {
+        const oldRow = endRow + (i - newEndRow);
+        if (stack.equals(beginStateAt(oldEnd, oldRow))) {
+          break;
+        }
+      }
+      const result = grammar.tokenizeLine2(newLines[i], stack);
+      changed.push(toByteTokens(newLines[i], result.tokens));
+      newEnd[i] = result.ruleStack;
+      stack = result.ruleStack;
+      i++;
+    }
+    for (let j = i; j < newLen; j++) {
+      newEnd[j] = oldEnd[endRow + (j - newEndRow)];
+    }
+
+    bufferState.set(bufId, { scopeName, lines: newLines, endState: newEnd });
+
+    // Repaint one line of left context (see tokenizeIncremental for rationale).
+    if (firstline > 0) {
+      const ctxLine = newLines[firstline - 1];
+      const ctx = grammar.tokenizeLine2(ctxLine, beginStateAt(newEnd, firstline - 1));
+      changed.unshift(toByteTokens(ctxLine, ctx.tokens));
+      return { start: firstline - 1, stop: i, tokens: changed, lineCount: newLen };
+    }
+    return { start: firstline, stop: i, tokens: changed, lineCount: newLen };
+  }
+
   async function handle(msg) {
     if (msg.type === "ping") {
       send({ id: msg.id, type: "ok", pong: true });
@@ -225,26 +289,64 @@ async function main() {
       bufferState.delete(msg.bufId);
       return;
     }
-    if (msg.type !== "tokenize") {
-      send({ id: msg.id, type: "error", message: `unknown type: ${msg.type}` });
+    if (msg.type === "tokenize") {
+      const grammar = await getGrammar(msg.scopeName);
+      if (!grammar) {
+        send({
+          id: msg.id,
+          type: "error",
+          message: `no grammar for scope ${msg.scopeName}`,
+        });
+        return;
+      }
+      const result = tokenizeIncremental(
+        grammar,
+        msg.bufId,
+        msg.scopeName,
+        msg.lines || [],
+      );
+      send({ id: msg.id, type: "ok", ...result });
       return;
     }
-    const grammar = await getGrammar(msg.scopeName);
-    if (!grammar) {
-      send({
-        id: msg.id,
-        type: "error",
-        message: `no grammar for scope ${msg.scopeName}`,
-      });
+
+    if (msg.type === "tokenizeRange") {
+      const grammar = await getGrammar(msg.scopeName);
+      if (!grammar) {
+        send({
+          id: msg.id,
+          type: "error",
+          message: `no grammar for scope ${msg.scopeName}`,
+        });
+        return;
+      }
+      // No cached base (e.g. after a drop): caller must fall back to a full
+      // tokenize. Signal the error so the client retries with `tokenize`.
+      if (!bufferState.has(msg.bufId)) {
+        send({
+          id: msg.id,
+          type: "error",
+          message: "no cached buffer state for range tokenize",
+        });
+        return;
+      }
+      const result = tokenizeRange(
+        grammar,
+        msg.bufId,
+        msg.scopeName,
+        msg.startRow,
+        msg.endRow,
+        msg.newEndRow,
+        msg.lines || [],
+      );
+      if (!result) {
+        send({ id: msg.id, type: "error", message: "range tokenize failed (stale cache)" });
+        return;
+      }
+      send({ id: msg.id, type: "ok", ...result });
       return;
     }
-    const result = tokenizeIncremental(
-      grammar,
-      msg.bufId,
-      msg.scopeName,
-      msg.lines || [],
-    );
-    send({ id: msg.id, type: "ok", ...result });
+
+    send({ id: msg.id, type: "error", message: `unknown type: ${msg.type}` });
   }
 
   let buffer = "";
