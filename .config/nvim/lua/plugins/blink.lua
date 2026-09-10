@@ -363,9 +363,6 @@ local M = {
 					enabled = false,
 				},
 				use_proximity = false,
-				-- Don't filter out low-scoring items - OmniSharp marks unimported
-				-- types with lower sortText, and we want to show them
-				min_score = 0,
 				sorts = { "score", "sort_text", "label" },
 				prebuilt_binaries = {
 					download = true,
@@ -384,14 +381,11 @@ local M = {
 					auto_brackets = {
 						enabled = true,
 					},
-					-- Increase timeout for resolving completion items (imports)
-					-- OmniSharp can take longer than the default 100ms
-					resolve_timeout_ms = 2000,
 				},
 				list = {
 					-- Increase to show more items, including unimported types
 					-- which OmniSharp ranks lower
-					max_items = 200,
+					max_items = 30,
 					selection = {
 						preselect = function(ctx)
 							return ctx.mode ~= "cmdline"
