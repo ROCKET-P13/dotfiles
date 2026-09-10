@@ -5,7 +5,17 @@ local M = {
 	},
 	event = { "BufReadPre", "BufNewFile" },
 	config = function()
+		-- Set up capabilities for completion resolve (auto-imports)
+		local capabilities = vim.lsp.protocol.make_client_capabilities()
+		capabilities.textDocument = capabilities.textDocument or {}
+		capabilities.textDocument.completion = capabilities.textDocument.completion or {}
+		capabilities.textDocument.completion.completionItem = capabilities.textDocument.completion.completionItem or {}
+		capabilities.textDocument.completion.completionItem.resolveSupport = {
+			properties = { "documentation", "detail", "additionalTextEdits" },
+		}
+
 		vim.lsp.config("lua_ls", {
+			capabilities = capabilities,
 			root_markers = { ".luarc.json", ".luarc.jsonc", ".luarc", ".git" },
 			root_dir = function(bufnr, on_dir)
 				local path = vim.api.nvim_buf_get_name(bufnr)
@@ -30,15 +40,12 @@ local M = {
 			},
 		})
 
-		vim.lsp.config("omnisharp", {
-			settings = {
-				FormattingOptions = {
-					OrganizeImports = true,
-				},
-			},
+		vim.lsp.config("csharp_ls", {
+			capabilities = capabilities,
 		})
 
 		vim.lsp.config("ts_ls", {
+			capabilities = capabilities,
 			settings = {
 				filetypes = {
 					"javascript",
@@ -51,6 +58,7 @@ local M = {
 		})
 
 		vim.lsp.config("tailwindcss", {
+			capabilities = capabilities,
 			-- Spawn the language server directly. lspconfig's default ships
 			-- `cmd` as a function (to prefer a local `node_modules/.bin`
 			-- copy), which the native `vim.lsp.enable` path does not invoke,
@@ -120,7 +128,8 @@ local M = {
 		vim.lsp.enable("lua_ls")
 		vim.lsp.enable("ts_ls")
 		vim.lsp.enable("eslint")
-		vim.lsp.enable("omnisharp")
+		vim.lsp.enable("csharp_ls")
+		vim.lsp.enable("csharpier")
 		vim.lsp.enable("cssls")
 		vim.lsp.enable("html")
 		vim.lsp.enable("jsonls")
@@ -142,6 +151,13 @@ local M = {
 				if client.server_capabilities.semanticTokensProvider then
 					client.server_capabilities.semanticTokensProvider = nil
 				end
+
+				vim.keymap.set(
+					"n",
+					"K",
+					vim.lsp.buf.hover,
+					vim.tbl_extend("force", { buffer = args.buf, silent = true }, { desc = "Hover documentation" })
+				)
 
 				if client.name == "lemminx" then
 					client.server_capabilities.documentFormattingProvider = false

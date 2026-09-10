@@ -13,3 +13,4 @@
 !.tmux-rename-session.sh
 !.tmux-session-list.sh
 !.gitignore
+.config/htop/htop_history

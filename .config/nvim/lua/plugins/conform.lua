@@ -13,10 +13,10 @@ local M = {
 		conform.setup({
 			formatters_by_ft = {
 				lua = { "stylua" },
-				-- cs = { "omnisharp" },
+				cs = { "csharpier" },
 			},
 			format_on_save = function(bufnr)
-				local disabled = { html = true, xml = true, cs = true, json = true, jsonc = true }
+				local disabled = { html = true, xml = true, json = true, jsonc = true }
 				if disabled[vim.bo[bufnr].filetype] then
 					return nil
 				end

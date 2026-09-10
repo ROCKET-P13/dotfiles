@@ -41,8 +41,8 @@ local M = {
 			},
 		})
 
-		vim.keymap.set("n", "<C-b>", require("oil").toggle_float)
+		vim.keymap.set("n", "<C-o>", require("oil").toggle_float)
 	end,
 }
 
-return {}
+return M

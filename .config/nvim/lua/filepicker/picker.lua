@@ -19,6 +19,9 @@ function M.open(opts)
 	})
 
 	local finder = finder_mod.make_finder(candidates, {
+		cwd = cwd,
+		exclude_ext = opts.exclude_ext,
+		max_files = opts.max_files,
 		max_results = opts.max_results,
 		recency_weight = opts.recency_weight,
 		test_penalty = opts.test_penalty,
