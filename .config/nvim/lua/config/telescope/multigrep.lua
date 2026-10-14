@@ -50,6 +50,12 @@ local live_multi_grep = function(opts)
 			finder = finder,
 			previewer = conf.grep_previewer(opts),
 			sorter = require("telescope.sorters").empty(),
+			layout_config = {
+				horizontal = {
+					height = 0.6,
+					width = 0.6,
+				},
+			},
 		})
 		:find()
 end

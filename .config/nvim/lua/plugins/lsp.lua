@@ -40,8 +40,21 @@ local M = {
 			},
 		})
 
-		vim.lsp.config("csharp_ls", {
-			capabilities = capabilities,
+		-- csharp_ls (OmniSharp) does not emit IDE0005 unused-using diagnostics
+		-- or C# 12 primary-constructor refactorings. roslyn_ls is the same
+		-- Microsoft.CodeAnalysis.LanguageServer used by VS Code / Cursor.
+		-- Roslyn withholds diagnostics unless dynamicRegistration is true
+		-- (nvim-lspconfig lsp/roslyn_ls.lua).
+		local roslyn_capabilities = vim.tbl_deep_extend("force", vim.deepcopy(capabilities), {
+			textDocument = {
+				diagnostic = {
+					dynamicRegistration = true,
+				},
+			},
+		})
+
+		vim.lsp.config("roslyn_ls", {
+			capabilities = roslyn_capabilities,
 		})
 
 		vim.lsp.config("ts_ls", {
@@ -128,7 +141,7 @@ local M = {
 		vim.lsp.enable("lua_ls")
 		vim.lsp.enable("ts_ls")
 		vim.lsp.enable("eslint")
-		vim.lsp.enable("csharp_ls")
+		vim.lsp.enable("roslyn_ls")
 		vim.lsp.enable("csharpier")
 		vim.lsp.enable("cssls")
 		vim.lsp.enable("html")
