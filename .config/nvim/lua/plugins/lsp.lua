@@ -148,6 +148,7 @@ local M = {
 		vim.lsp.enable("jsonls")
 		vim.lsp.enable("lemminx")
 		vim.lsp.enable("tailwindcss")
+		vim.lsp.enable("oxlint")
 
 		vim.api.nvim_create_autocmd("BufRead", {
 			pattern = "*.html",

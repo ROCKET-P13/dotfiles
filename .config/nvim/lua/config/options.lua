@@ -84,8 +84,6 @@ vim.opt.startofline = true
 
 local keymap = vim.api.nvim_set_keymap
 
-keymap("n", "<leader>p", ":MarkdownPreviewToggle<CR>", {})
-
 keymap("n", "<leader>v", ":TodoLocList<CR>", {})
 
 keymap("n", "<C-s>", ":w<CR>", {})

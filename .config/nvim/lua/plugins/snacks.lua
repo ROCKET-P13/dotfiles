@@ -182,41 +182,41 @@ return {
 					filter = { cwd = true },
 					sort = sort_by_ext_then_tests,
 				},
-			explorer = {
-				git_status = true,
-				git_untracked = true,
-				hidden = true,
-				ignored = true,
-				finder = function(opts, ctx)
-					if opts.__base_exclude == nil then
-						opts.__base_exclude = opts.exclude and vim.deepcopy(opts.exclude) or {}
-					end
-					local exclude = vim.deepcopy(opts.__base_exclude)
-					local searching = not ctx.filter:is_empty()
-					if searching and not explorer_wants_node_modules(ctx.filter) then
-						table.insert(exclude, "node_modules")
-					end
-					opts.exclude = exclude
-					return require("snacks.picker.source.explorer").explorer(opts, ctx)
-				end,
-				config = function(opts)
-					opts = require("snacks.picker.source.explorer").setup(opts)
-					opts.filter = opts.filter or {}
-					local builtin_transform = opts.filter.transform
-					local node_modules_visible = false
-					-- Re-run the finder when the query crosses the node_modules/
-					-- threshold; the finder alone only re-scans on empty toggles.
-					opts.filter.transform = function(picker, filter)
-						local changed = builtin_transform and builtin_transform(picker, filter) or nil
-						local wants = not filter:is_empty() and explorer_wants_node_modules(filter)
-						if wants ~= node_modules_visible then
-							node_modules_visible = wants
-							changed = true
+				explorer = {
+					git_status = true,
+					git_untracked = true,
+					hidden = true,
+					ignored = true,
+					finder = function(opts, ctx)
+						if opts.__base_exclude == nil then
+							opts.__base_exclude = opts.exclude and vim.deepcopy(opts.exclude) or {}
 						end
-						return changed
-					end
-					return opts
-				end,
+						local exclude = vim.deepcopy(opts.__base_exclude)
+						local searching = not ctx.filter:is_empty()
+						if searching and not explorer_wants_node_modules(ctx.filter) then
+							table.insert(exclude, "node_modules")
+						end
+						opts.exclude = exclude
+						return require("snacks.picker.source.explorer").explorer(opts, ctx)
+					end,
+					config = function(opts)
+						opts = require("snacks.picker.source.explorer").setup(opts)
+						opts.filter = opts.filter or {}
+						local builtin_transform = opts.filter.transform
+						local node_modules_visible = false
+						-- Re-run the finder when the query crosses the node_modules/
+						-- threshold; the finder alone only re-scans on empty toggles.
+						opts.filter.transform = function(picker, filter)
+							local changed = builtin_transform and builtin_transform(picker, filter) or nil
+							local wants = not filter:is_empty() and explorer_wants_node_modules(filter)
+							if wants ~= node_modules_visible then
+								node_modules_visible = wants
+								changed = true
+							end
+							return changed
+						end
+						return opts
+					end,
 					win = {
 						input = {
 							keys = {
