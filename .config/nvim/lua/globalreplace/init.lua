@@ -441,13 +441,17 @@ local function replace_one(s)
 	local col = vim.api.nvim_win_get_cursor(s.panel_win)[2]
 	local span = span_nearest(rec, col)
 	local repl = s.data.flat[span.mi].repl or input(s, ROW_REPLACE)
-	local lines = vim.fn.readfile(rec.abs)
+	-- "b" keeps a trailing CR on each line and whether the file ended in a
+	-- newline. Plain readfile/writefile strips the CR and always emits LF.
+	local lines = vim.fn.readfile(rec.abs, "b")
 	local target = lines[rec.lrec.lnum]
 	if not target then
 		return
 	end
 	lines[rec.lrec.lnum] = target:sub(1, span.col) .. repl .. target:sub(span.end_col + 1)
-	vim.fn.writefile(lines, rec.abs)
+	if vim.fn.writefile(lines, rec.abs, "b") ~= 0 then
+		return
+	end
 	reload_buffer(rec.abs)
 	run_search(s, true)
 end
@@ -472,7 +476,8 @@ local function replace_all(s)
 	for _, frec in ipairs(s.data.files) do
 		local args = common_args(s, include, exclude)
 		vim.list_extend(args, { "--passthru", "--no-line-number", "--replace", replace, "--", search, frec.abs })
-		local res = vim.system(args, { text = true, cwd = s.cwd }):wait()
+		-- text=false keeps the CR LF ripgrep printed. text=true rewrites them to LF.
+		local res = vim.system(args, { text = false, cwd = s.cwd }):wait()
 		if res.code == 0 and res.stdout and res.stdout ~= "" then
 			local fh = io.open(frec.abs, "wb")
 			if fh then

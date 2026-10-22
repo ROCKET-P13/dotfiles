@@ -14,14 +14,18 @@ local theme = require("textmate.theme")
 local M = {}
 
 -- buf -> { ns, scope_name, attached, timer, last_run, inflight, dirty, tick,
---          pending, dirty_full, partial }
---   pending: { firstline, lastline, new_lastline } | nil
---     A single on_lines edit not yet sent. If a second edit arrives before the
---     first is sent, `dirty_full` is set and the next pass falls back to a
---     whole-buffer tokenize.
+--          pending, dirty_full, partial, base_line_count }
+--   pending: { start, old_end, new_end } | nil
+--     Unsent splice from the tokenizer's cached buffer to the live buffer.
+--     tokenizer[start, old_end) is replaced by current[start, new_end).
+--     `start` is the same index in both; the prefix above it is unchanged.
+--     Successive on_lines events merge into this one splice.
 --   dirty_full: bool
---     Force a full-buffer send on the next pass (multi-edit coalescing, or any
---     case where the incremental range path can't be used safely).
+--     The splice is not safe (or the cache was dropped). Next pass sends the
+--     whole buffer.
+--   base_line_count: integer|nil
+--     Line count of the snapshot the in-flight or last complete tokenize
+--     established. `old_end` is measured against that snapshot.
 local state = {}
 
 local config = {
@@ -70,10 +74,83 @@ end
 
 local schedule
 
+-- Fold `on_lines(f, l, nl)` into the unsent splice. The tokenizer buffer is
+-- frozen, so an edit above the span shifts only the current-buffer end.
+-- `pending_ok` rejects a splice whose indexes no longer describe both buffers.
+local function merge_pending(pending, f, l, nl)
+	if not pending then
+		return { start = f, old_end = l, new_end = nl }
+	end
+	local start = pending.start
+	local old_end = pending.old_end
+	local new_end = pending.new_end
+	local delta = new_end - old_end
+	local line_delta = nl - l
+
+	if l <= start then
+		return {
+			start = f,
+			old_end = old_end,
+			new_end = new_end + line_delta,
+		}
+	end
+
+	if f >= new_end then
+		return {
+			start = start,
+			old_end = l - delta,
+			new_end = nl,
+		}
+	end
+
+	-- Overlaps the span. A delete that runs past new_end consumes tokenizer
+	-- suffix lines; the live dirty region then ends where that edit ends.
+	local merged_old_end = old_end
+	local merged_new_end
+	if l > new_end then
+		local mapped = l - delta
+		if mapped > merged_old_end then
+			merged_old_end = mapped
+		end
+		merged_new_end = nl
+	else
+		merged_new_end = new_end + line_delta
+	end
+	return {
+		start = math.min(start, f),
+		old_end = merged_old_end,
+		new_end = merged_new_end,
+	}
+end
+
+local function pending_ok(pending, base_line_count, line_count)
+	if not pending then
+		return false
+	end
+	if pending.start < 0 or pending.old_end < pending.start or pending.new_end < pending.start then
+		return false
+	end
+	if pending.new_end > line_count then
+		return false
+	end
+	if base_line_count and pending.old_end > base_line_count then
+		return false
+	end
+	return true
+end
+
+local function queue_full(st)
+	st.pending = nil
+	st.dirty_full = true
+	st.partial = false
+	st.dirty = true
+end
+
 -- At most one tokenize request is outstanding per buffer. This keeps the
--- tokenizer's cached base in lockstep with what we last painted, so its
--- incremental diffs stay valid. Edits arriving while a request is in flight set
--- `dirty`, triggering a follow-up pass once the current one returns.
+-- tokenizer's cached base in lockstep with the snapshot we last sent, so a
+-- later range splice applies on top of that snapshot. Edits that land while
+-- the request is in flight merge into `pending` and go out as one range once
+-- it returns.
 --
 -- `limit`, when set, sends only the first `limit` lines. The tokenizer caches
 -- rule-stack state for just that prefix, so the follow-up full pass resumes
@@ -88,7 +165,11 @@ local function send_tokenize(buf, limit)
 	local line_count = vim.api.nvim_buf_line_count(buf)
 	if line_count > config.max_lines then
 		-- Drop any cached base so re-enabling below the limit re-tokenizes cleanly.
+		-- dirty_full stops a later edit from splicing against that dropped cache.
 		config.client:drop(buf)
+		st.base_line_count = nil
+		st.pending = nil
+		st.dirty_full = true
 		return
 	end
 	if st.inflight then
@@ -96,60 +177,91 @@ local function send_tokenize(buf, limit)
 		return
 	end
 
-	-- Incremental path: exactly one edit pending, no partial-paint limit, no
-	-- full-buffer fallback flagged. Sends only the changed line range; the
-	-- tokenizer splices it into its cached buffer state and re-tokenizes from
-	-- the edit's start row until state convergence with the unchanged suffix.
-	local pending = st.pending
-	if pending and not st.dirty_full and limit == nil then
-		st.pending = nil
-		st.dirty_full = false
-		st.inflight = true
-		st.tick = vim.api.nvim_buf_get_changedtick(buf)
-		local lines = vim.api.nvim_buf_get_lines(buf, pending.firstline, pending.new_lastline, false)
-		config.client:tokenize_range(
-			buf,
-			st.scope_name,
-			pending.firstline,
-			pending.lastline,
-			pending.new_lastline,
-			lines,
-			function(err, result)
-				vim.schedule(function()
-					local s = state[buf]
-					if not s or not s.attached then
-						return
-					end
-					s.inflight = false
-					if err then
-						-- No cached base (e.g. after a drop) or stale cache: retry
-						-- with a full-buffer tokenize on the next pass.
-						s.dirty = true
-					elseif not vim.api.nvim_buf_is_valid(buf) then
-						return
-					elseif vim.api.nvim_buf_get_changedtick(buf) == s.tick then
-						paint_range(buf, s.ns, result.start, result.stop, result.tokens)
-					else
-						-- The buffer changed during the request, so the result's
-						-- line numbers no longer line up and the cached base is
-						-- stale. Discard it and force a full re-tokenize.
-						config.client:drop(buf)
-						s.dirty_full = true
-						s.dirty = true
-					end
-					if s.dirty then
-						s.dirty = false
-						schedule(buf)
-					end
-				end)
+	-- Reply for one in-flight tokenize. A complete request (range, or a full
+	-- send with no prefix limit) leaves the Node cache equal to the snapshot
+	-- that was sent. Edits since that snapshot sit in `pending`; paint is
+	-- skipped because the reply's line numbers are for the snapshot. A prefix
+	-- tokenize has no suffix in the cache, so a mismatch there still drops.
+	local function finish(err, result, report_err)
+		vim.schedule(function()
+			local s = state[buf]
+			if not s or not s.attached then
+				return
 			end
-		)
-		return
+			s.inflight = false
+			if not vim.api.nvim_buf_is_valid(buf) then
+				return
+			end
+			if err then
+				-- The snapshot was not cached. Drop the base we recorded at send
+				-- time so the next pass does not splice against it.
+				s.base_line_count = nil
+				if report_err then
+					vim.notify("[textmate] " .. err, vim.log.levels.WARN)
+				else
+					queue_full(s)
+				end
+			elseif vim.api.nvim_buf_get_changedtick(buf) == s.tick then
+				paint_range(buf, s.ns, result.start, result.stop, result.tokens)
+				-- Only a prefix was painted; queue a full pass to tokenize the rest.
+				-- The prefix cache stays so that pass resumes instead of redoing it.
+				if s.partial then
+					s.partial = false
+					s.dirty = true
+				end
+			elseif s.partial or s.dirty_full or not pending_ok(s.pending, s.base_line_count, vim.api.nvim_buf_line_count(buf)) then
+				queue_full(s)
+			else
+				s.dirty = true
+			end
+			if s.dirty then
+				s.dirty = false
+				schedule(buf)
+			end
+		end)
 	end
 
-	-- Full-buffer path: initial attach (with optional partial-paint limit),
-	-- reload, multi-edit coalescing, or a range-path fallback. Re-sends the
-	-- whole buffer; the tokenizer diffs against its cached base.
+	-- Incremental path: one merged splice, no prefix limit, cache still valid.
+	-- The tokenizer replaces its cached rows [start, old_end) with the live
+	-- rows [start, new_end) and retokenizes until the rule stack converges.
+	-- `base_line_count` is set when a complete snapshot is sent; without it
+	-- the Node process has nothing to splice into, so this falls through.
+	local pending = st.pending
+	if pending and not st.dirty_full and limit == nil and st.base_line_count then
+		if not pending_ok(pending, st.base_line_count, line_count) then
+			st.dirty_full = true
+		else
+			st.pending = nil
+			st.dirty_full = false
+			st.partial = false
+			st.inflight = true
+			st.dirty = false
+			st.base_line_count = line_count
+			st.tick = vim.api.nvim_buf_get_changedtick(buf)
+			local lines = vim.api.nvim_buf_get_lines(buf, pending.start, pending.new_end, false)
+			config.client:tokenize_range(
+				buf,
+				st.scope_name,
+				pending.start,
+				pending.old_end,
+				pending.new_end,
+				lines,
+				function(err, result)
+					finish(err, result, false)
+				end
+			)
+			return
+		end
+	end
+
+	-- Full-buffer path: initial attach (with optional prefix limit), reload,
+	-- or a splice that failed validation. A dropped cache is cleared first so
+	-- the tokenizer does not diff against a base the splice could not describe.
+	-- The prefix follow-up leaves the cache in place and diffs against it.
+	if st.dirty_full then
+		config.client:drop(buf)
+		st.base_line_count = nil
+	end
 	st.pending = nil
 	st.dirty_full = false
 	local send_count = line_count
@@ -162,37 +274,12 @@ local function send_tokenize(buf, limit)
 	st.inflight = true
 	st.dirty = false
 	st.partial = partial
+	if not partial then
+		st.base_line_count = line_count
+	end
 	st.tick = vim.api.nvim_buf_get_changedtick(buf)
 	config.client:tokenize(buf, st.scope_name, lines, function(err, result)
-		vim.schedule(function()
-			local s = state[buf]
-			if not s or not s.attached then
-				return
-			end
-			s.inflight = false
-			if err then
-				vim.notify("[textmate] " .. err, vim.log.levels.WARN)
-			elseif not vim.api.nvim_buf_is_valid(buf) then
-				return
-			elseif vim.api.nvim_buf_get_changedtick(buf) == s.tick then
-				paint_range(buf, s.ns, result.start, result.stop, result.tokens)
-				-- Only a prefix was painted; queue a full pass to tokenize the rest.
-				if s.partial then
-					s.partial = false
-					s.dirty = true
-				end
-			else
-				-- The buffer changed during the request, so the result's line
-				-- numbers no longer line up and the cached base is stale. Discard
-				-- it and force the next pass to re-tokenize from scratch.
-				config.client:drop(buf)
-				s.dirty = true
-			end
-			if s.dirty then
-				s.dirty = false
-				schedule(buf)
-			end
-		end)
+		finish(err, result, true)
 	end)
 end
 
@@ -278,14 +365,16 @@ function M.attach(buf, scope_name)
 				return true -- detach the callback
 			end
 			local st = state[buf]
-			if st.pending then
-				-- A second edit arrived before the first was sent. The single-edit
-				-- splice can't represent two disjoint edits safely, so fall back
-				-- to a whole-buffer tokenize on the next pass.
-				st.pending = nil
-				st.dirty_full = true
-			else
-				st.pending = { firstline = firstline, lastline = lastline, new_lastline = new_lastline }
+			-- A dropped cache cannot take a splice. Later edits stay on the
+			-- full-buffer path; that pass reads the live buffer.
+			if not st.dirty_full then
+				local merged = merge_pending(st.pending, firstline, lastline, new_lastline)
+				if pending_ok(merged, st.base_line_count, vim.api.nvim_buf_line_count(buf)) then
+					st.pending = merged
+				else
+					st.pending = nil
+					st.dirty_full = true
+				end
 			end
 			schedule(buf)
 		end,
@@ -296,10 +385,12 @@ function M.attach(buf, scope_name)
 			-- A reload (e.g. autoread after `git reset --hard` rewrites the file)
 			-- wipes every extmark and replaces all lines. Drop the cached base so
 			-- the next pass is a full re-tokenize, repainting the whole buffer
-			-- rather than only an incremental diff.
+			-- rather than only an incremental diff. dirty_full keeps a keystroke
+			-- before that pass from splicing against the dropped cache.
 			local st = state[buf]
 			st.pending = nil
-			st.dirty_full = false
+			st.dirty_full = true
+			st.base_line_count = nil
 			config.client:drop(buf)
 			schedule(buf)
 		end,
