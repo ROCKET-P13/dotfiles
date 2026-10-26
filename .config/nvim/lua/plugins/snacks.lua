@@ -153,7 +153,7 @@ return {
 				{ section = "startup" },
 			},
 		},
-		explorer = { enabled = true },
+		explorer = { enabled = false },
 		indent = {
 			enabled = true,
 			only_scope = true,
@@ -275,18 +275,18 @@ return {
 			end,
 			desc = "Command History",
 		},
-		{
-			"<C-b>",
-			function()
-				local explorer = Snacks.picker.get({ source = "explorer" })[1]
-				if explorer then
-					explorer:close()
-				else
-					Snacks.explorer()
-				end
-			end,
-			desc = "File Explorer",
-		},
+		-- {
+		-- 	"<C-b>",
+		-- 	function()
+		-- 		local explorer = Snacks.picker.get({ source = "explorer" })[1]
+		-- 		if explorer then
+		-- 			explorer:close()
+		-- 		else
+		-- 			Snacks.explorer()
+		-- 		end
+		-- 	end,
+		-- 	desc = "File Explorer",
+		-- },
 		-- find
 		{
 			"<leader>fb",

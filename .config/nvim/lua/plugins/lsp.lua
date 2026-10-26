@@ -5,14 +5,10 @@ local M = {
 	},
 	event = { "BufReadPre", "BufNewFile" },
 	config = function()
-		-- Set up capabilities for completion resolve (auto-imports)
-		local capabilities = vim.lsp.protocol.make_client_capabilities()
-		capabilities.textDocument = capabilities.textDocument or {}
-		capabilities.textDocument.completion = capabilities.textDocument.completion or {}
-		capabilities.textDocument.completion.completionItem = capabilities.textDocument.completion.completionItem or {}
-		capabilities.textDocument.completion.completionItem.resolveSupport = {
-			properties = { "documentation", "detail", "additionalTextEdits" },
-		}
+		-- blink advertises snippet text, insert/replace ranges, and resolve of
+		-- `command` plus `additionalTextEdits`. ts_ls uses those for JSX
+		-- component items and their auto-imports.
+		local capabilities = require("blink.cmp").get_lsp_capabilities(nil, true)
 
 		vim.lsp.config("lua_ls", {
 			capabilities = capabilities,
@@ -57,16 +53,21 @@ local M = {
 			capabilities = roslyn_capabilities,
 		})
 
+		local ts_preferences = {
+			includeCompletionsForModuleExports = true,
+			includeCompletionsWithInsertText = true,
+			includeCompletionsWithSnippetText = true,
+			allowIncompleteCompletions = true,
+			jsxAttributeCompletionStyle = "auto",
+		}
+
 		vim.lsp.config("ts_ls", {
 			capabilities = capabilities,
+			-- `.tsx` attaches as `typescriptreact` via lspconfig's default
+			-- filetypes. A `filetypes` list under `settings` is not that list.
 			settings = {
-				filetypes = {
-					"javascript",
-					"typescript",
-					"javascriptreact",
-					"typescriptreact",
-					"tsx",
-				},
+				typescript = { preferences = ts_preferences },
+				javascript = { preferences = ts_preferences },
 			},
 		})
 

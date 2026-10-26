@@ -20,6 +20,7 @@ local DEFAULT_FILETYPES = {
 	css = "source.css",
 	html = "text.html.basic",
 	xml = "text.xml",
+	lua = "text.lua",
 }
 
 local state = {
@@ -196,10 +197,7 @@ function M.setup(opts)
 		return
 	end
 	if not deps_installed(root) then
-		vim.notify(
-			"[textmate] dependencies missing; run :Lazy build textmate.nvim",
-			vim.log.levels.ERROR
-		)
+		vim.notify("[textmate] dependencies missing; run :Lazy build textmate.nvim", vim.log.levels.ERROR)
 		return
 	end
 	if vim.fn.filereadable(config.theme_file) ~= 1 then

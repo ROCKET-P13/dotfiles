@@ -66,10 +66,10 @@ local M = {
 			},
 		})
 
-		vim.keymap.set("n", "]b", function()
+		vim.keymap.set("n", "<C-Right>", function()
 			cycle_buffer(1)
 		end, { desc = "Next buffer" })
-		vim.keymap.set("n", "[b", function()
+		vim.keymap.set("n", "<C-Left>", function()
 			cycle_buffer(-1)
 		end, { desc = "Previous buffer" })
 	end,

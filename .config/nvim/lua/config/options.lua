@@ -77,8 +77,6 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter" }, {
 
 vim.keymap.set("n", "<C-l>", "<C-W>l")
 vim.keymap.set("n", "<C-h>", "<C-W>h")
-vim.keymap.set("n", "<C-j>", "<C-W>j")
-vim.keymap.set("n", "<C-k>", "<C-W>k")
 
 vim.opt.startofline = true
 
@@ -87,8 +85,6 @@ local keymap = vim.api.nvim_set_keymap
 keymap("n", "<leader>v", ":TodoLocList<CR>", {})
 
 keymap("n", "<C-s>", ":w<CR>", {})
-
-keymap("n", "<leader>z", ":delmarks a-zA-Z0-9", {})
 
 keymap("n", "<leader>d", [[:lua require('goto-preview').goto_preview_definition()<CR>]], {})
 keymap("n", "<leader>t", [[:lua require('goto-preview').goto_preview_type_definition()<CR>]], {})

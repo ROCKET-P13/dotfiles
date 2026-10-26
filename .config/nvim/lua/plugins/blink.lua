@@ -245,6 +245,54 @@ local M = {
 			return context_top(before)
 		end
 
+		local jsx_filetypes = {
+			typescriptreact = true,
+			javascriptreact = true,
+			["javascript.jsx"] = true,
+			["typescript.tsx"] = true,
+		}
+
+		local function jsx_filetype()
+			return jsx_filetypes[vim.bo.filetype] == true
+		end
+
+		-- Partial name after `<` or `</` at the cursor. Empty string means the
+		-- cursor is sitting on the `<` itself. Nil for `<=` and non-tag text.
+		local function jsx_tag_prefix()
+			if not jsx_filetype() then
+				return nil
+			end
+			local col = vim.api.nvim_win_get_cursor(0)[2]
+			local before = vim.api.nvim_get_current_line():sub(1, col)
+			if before:find("<=[%w.]*$") then
+				return nil
+			end
+			return before:match("</?([%w.]*)$")
+		end
+
+		-- `{expr}` in `<Foo prop={expr}>` is an expression, not an object key.
+		-- Nested objects (`style={{ color }}`) still count as object keys.
+		local function jsx_expression_value()
+			if not jsx_filetype() then
+				return false
+			end
+			local ok, node = pcall(vim.treesitter.get_node)
+			if not ok or not node then
+				return false
+			end
+			while node do
+				local kind = node:type()
+				if kind == "object" or kind == "object_type" or kind == "object_pattern" then
+					return false
+				end
+				if kind == "jsx_expression" then
+					return true
+				end
+				node = node:parent()
+			end
+			return false
+		end
+
 		require("blink.cmp").setup({
 			-- Enter accepts the selected suggestion (falls back to a newline
 			-- when no menu is visible). Esc dismisses the menu and leaves insert
@@ -271,6 +319,9 @@ local M = {
 			},
 			enabled = function()
 				local disabled = false
+				-- `full` keeps the text after the cursor in the filter. Inside a tag
+				-- that hides every component except the name already on the line.
+				require("blink.cmp.config").completion.keyword.range = jsx_tag_prefix() ~= nil and "prefix" or "full"
 				-- disabled = disabled or (vim.tbl_contains({ "markdown", "json", "jsonc" }, vim.bo.filetype))
 				-- disabled = disabled or (vim.bo.buftype == "prompt")
 				local top = current_top()
@@ -287,7 +338,7 @@ local M = {
 						and (
 							top.delim ~= nil
 							or (top.bracket ~= nil and top.content:match("^%s*%d*$") ~= nil)
-							or (top.brace ~= nil and top.object and not top.colon)
+							or (top.brace ~= nil and top.object and not top.colon and not jsx_expression_value())
 						)
 				end
 				return not disabled
@@ -325,6 +376,10 @@ local M = {
 				-- member access) and manual shows (`<C-Space>`) bypass the limit.
 				min_keyword_length = function(ctx)
 					if ctx.trigger.kind == "trigger_character" or ctx.trigger.kind == "manual" then
+						return 0
+					end
+					-- `<Q` is one character, but it is already a component name.
+					if jsx_tag_prefix() ~= nil then
 						return 0
 					end
 					return 2
