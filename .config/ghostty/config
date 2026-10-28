@@ -3,7 +3,6 @@ font-family = "MesloLGM Nerd Font Mono"
 window-inherit-font-size = false
 font-size = 12
 mouse-hide-while-typing = true
-scrollback-limit = 100
 clipboard-trim-trailing-spaces = true
 font-thicken = true
 font-thicken-strength = 210
